@@ -1,0 +1,636 @@
+---
+title: "20210926-figures-3"
+author: "Min Yang"
+date: "2021/9/26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r FB-immune类群的分析}
+library("harmony")
+#integrate DSC和FB-immune
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.FB.immune.SCT <- UE.decidual
+UE.FB.immune.SCT <- SCTransform(UE.FB.immune.SCT, ncells = 3000, verbose = FALSE, return.only.var.genes = FALSE)
+UE.FB.immune.SCT$cellname <- gsub("Postn-D", "Lum-D", UE.FB.immune.SCT$cellname)
+UE.FB.immune.SCT$cellname <- gsub("Ifit1-D", "S100a8-D", UE.FB.immune.SCT$cellname)
+UE.FB.immune.SCT$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.FB.immune.SCT$cellname)
+UE.FB.immune.SCT@active.ident <- factor(UE.FB.immune.SCT$cellname)
+UE.FB.immune.SCT <- subset(UE.FB.immune.SCT, subset = cellname != "Prg-" & cellname != "cluster9-1")
+FB.immune <- subset(UE.immune.harmony, subset = cellname == "FB-immune")
+save(FB.immune, file = "FB-immune.RData")
+UE.FB <- merge(UE.FB.immune.SCT, FB.immune)
+UE.FB <- FindVariableFeatures(UE.FB, selection.method = "vst", nfeatures = 2000)
+UE.FB <- ScaleData(UE.FB, features = VariableFeatures(UE.FB))
+UE.FB <- RunPCA(UE.FB, features = VariableFeatures(UE.FB))
+UE.FB <- RunHarmony(UE.FB, "time", plot_convergence = TRUE)
+UE.FB <- RunUMAP(UE.FB, reduction = "harmony", dims = 1:20)
+DimPlot(UE.FB)
+save(UE.FB, file = "FB-immune-DSC-harmony-20211214.RData")
+save(UE.FB, file = "FB-immune-DSC-harmony-20221218.RData")
+UE.FB$cellname <- factor(UE.FB$cellname, levels = c(decidual.levels[1:8], "FB-immune"))
+UE.FB.color <- c(decidual.color[1:7], immune.color[10])
+pdf("20210827-figures/figure5/Figure5-FB-imune-DSC-harmony-UMAP.pdf", width = 10, height = 10)
+DimPlot(UE.FB, pt.size = 1, group.by = "cellname", label = F, cols = UE.FB.color)
+dev.off()
+pdf("20210827-figures/figure5/Figure5-FB-imune-DSC-harmony-featureplot.pdf", width = 15, height = 20)
+FeaturePlot(UE.FB, features = c("Ptprc", "Gzma", "Lyz2", "Cd74", "Fcer1g", "H2-Ab1", "H2-Aa", "Cd52", "Ctss", "Il1b"), pt.size = 0.5, ncol = 3) & 
+  scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+```
+
+```{r 对E85的B6和C1两个片子进行直接的UMAP分群，然后再map回空间上}
+load("20210818-spatial/B6-bin50-spatial-phago-map.RData")
+B6.bin50.celltype.score <- GetAssayData(B6.bin50, slot = "data")
+B6.bin50.celltype.max <- apply(B6.bin50.celltype.score, 2, function(x) rownames(B6.bin50.celltype.score)[which.max(x)])
+B6.bin50.celltype.df <- data.frame(cell_type = B6.bin50.celltype.max, 
+                                cell_name = names(B6.bin50.celltype.max), 
+                                GetTissueCoordinates(B6.bin50), 
+                                nFeature_RNA = B6.bin50$nFeature_Spatial, 
+                                nCount_RNA = B6.bin50$nCount_Spatial, 
+                                spatial_cluster = B6.bin50$seurat_clusters)
+B6.cluster.celltype.tb <- table(B6.bin50.celltype.df$cell_type, B6.bin50.celltype.df$spatial_cluster)
+B6.cluster.celltype.tb <- apply(B6.cluster.celltype.tb, 2, function(x){x/rowSums(B6.cluster.celltype.tb)})
+B6.cluster.celltype.tb <- data.frame(B6.cluster.celltype.tb, celltype = rownames(B6.cluster.celltype.tb), check.names = F)
+B6.cluster.celltype.tb <- melt(B6.cluster.celltype.tb, id.vars = "celltype")
+B6.cluster.celltype.tb$celltype <- factor(B6.cluster.celltype.tb$celltype, levels = B6.cell_type.levels)
+pdf("20210827-figures/figure4/Figure4-5-cluster6-celltype-ratio-in-cluster.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_bar(B6.cluster.celltype.tb, mapping = aes(x = variable, y = value * 100, fill = celltype), width = 1, stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = B6.color) + 
+  facet_wrap(~ variable, scales = "free_x") + 
+  theme_bw()
+dev.off()
+#空间分群
+spatial_clusters <- c(brewer.pal(9, "Set1"), brewer.pal(8, "Set2"))
+spatial_clusters <- spatial_clusters[c(2,3,4,5,8,10,14,12,11,16,17)]
+pdf("20210827-figures/figure4/Figure4-7-B6-color-spatial-cluster.pdf", width = 9.5, height = 9)
+ggplot() + 
+  geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = spatial_cluster), size = 1.3) +
+  scale_color_manual(values = spatial_clusters) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+pdf("20210827-figures/figure4/Figure4-7-B6-UMAP-color-spatial-cluster.pdf", width = 10.5, height = 10)
+DimPlot(B6.bin50, group.by = "seurat_clusters", cols = spatial_clusters, pt.size = 1)
+dev.off()
+
+#看一下每个空间cluster中的细胞类型比例
+B6.cluster.celltype.tb <- data.frame(table(B6.bin50.celltype.df$cell_type, B6.bin50.celltype.df$spatial_cluster), check.names = F)
+B6.cluster.celltype.tb$Var1 <- factor(B6.cluster.celltype.tb$Var1, levels = B6.cell_type.levels)
+pdf("20210827-figures/figure4/Figure4-5-cluster6-celltype-ratio-in-cluster-pieplot.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_bar(B6.cluster.celltype.tb, mapping = aes(x = "", y = Freq, fill = Var1), width = 1, stat = "identity", position = "fill") + 
+  scale_fill_manual(values = B6.color) + 
+  facet_wrap(~ Var2) + 
+  coord_polar(theta = "y") + 
+  labs(x = "", y = "", title = "") + 
+  theme_bw() + 
+  theme(panel.grid=element_blank(), axis.text.x = element_blank())
+dev.off()
+
+pdf("20210827-figures/figure4/Figure4-5-cluster6-cluster-ratio-celltype-pieplot.pdf", width = 20, height = 15)
+ggplot() + 
+  geom_bar(B6.cluster.celltype.tb, mapping = aes(x = "", y = Freq, fill = Var2), width = 1, stat = "identity", position = "fill") + 
+  facet_wrap(~ Var1) + 
+  scale_fill_manual(values = spatial_clusters) +
+  coord_polar(theta = "y") + 
+  labs(x = "", y = "", title = "") + 
+  theme_bw() + 
+  theme(panel.grid=element_blank(), axis.text.x = element_blank())
+dev.off()
+
+#C1的空间分群
+load("20210818-spatial/C1-bin50-spatial-phago-map.RData")
+C1.bin50.celltype.score <- GetAssayData(C1.bin50, slot = "data")
+C1.bin50.celltype.max <- apply(C1.bin50.celltype.score, 2, function(x) rownames(C1.bin50.celltype.score)[which.max(x)])
+C1.bin50.celltype.df <- data.frame(cell_type = C1.bin50.celltype.max, 
+                                cell_name = names(C1.bin50.celltype.max), 
+                                GetTissueCoordinates(C1.bin50), 
+                                nFeature_RNA = C1.bin50$nFeature_Spatial, 
+                                nCount_RNA = C1.bin50$nCount_Spatial, 
+                                spatial_cluster = C1.bin50$seurat_clusters)
+C1.cluster.celltype.tb <- table(C1.bin50.celltype.df$cell_type, C1.bin50.celltype.df$spatial_cluster)
+C1.cluster.celltype.tb <- apply(C1.cluster.celltype.tb, 2, function(x){x/rowSums(C1.cluster.celltype.tb)})
+C1.cluster.celltype.tb <- data.frame(C1.cluster.celltype.tb, celltype = rownames(C1.cluster.celltype.tb), check.names = F)
+C1.cluster.celltype.tb <- melt(C1.cluster.celltype.tb, id.vars = "celltype")
+C1.cluster.celltype.tb$celltype <- factor(C1.cluster.celltype.tb$celltype, levels = C1.cell_type.levels)
+
+pdf("20210827-figures/figure4/Figure4-5-C1-celltype-ratio-in-cluster.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_bar(C1.cluster.celltype.tb, mapping = aes(x = variable, y = value * 100, fill = celltype), width = 1, stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = C1.color) + 
+  facet_wrap(~ variable, scales = "free_x") + 
+  theme_bw()
+dev.off()
+#空间分群
+spatial_clusters <- c(brewer.pal(9, "Set1"), brewer.pal(8, "Set2"))
+spatial_clusters <- spatial_clusters[c(2,3,4,5,8,10,14,12,11,16,17)]
+pdf("20210827-figures/figure4/Figure4-7-C1-color-spatial-cluster.pdf", width = 9.5, height = 9)
+ggplot() + 
+  geom_point(C1.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = spatial_cluster), size = 1.3) +
+  scale_color_manual(values = spatial_clusters) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+pdf("20210827-figures/figure4/Figure4-7-C1-UMAP-color-spatial-cluster.pdf", width = 10.5, height = 10)
+DimPlot(C1.bin50, group.by = "seurat_clusters", cols = spatial_clusters, pt.size = 1)
+dev.off()
+
+#看一下每个空间cluster中的细胞类型比例
+C1.cluster.celltype.tb <- data.frame(table(C1.bin50.celltype.df$cell_type, C1.bin50.celltype.df$spatial_cluster), check.names = F)
+C1.cluster.celltype.tb$Var1 <- factor(C1.cluster.celltype.tb$Var1, levels = C1.cell_type.levels)
+pdf("20210827-figures/figure4/Figure4-5-C1-celltype-ratio-in-cluster-pieplot.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_bar(C1.cluster.celltype.tb, mapping = aes(x = "", y = Freq, fill = Var1), width = 1, stat = "identity", position = "fill") + 
+  scale_fill_manual(values = C1.color) + 
+  facet_wrap(~ Var2) + 
+  coord_polar(theta = "y") + 
+  labs(x = "", y = "", title = "") + 
+  theme_bw() + 
+  theme(panel.grid=element_blank(), axis.text.x = element_blank())
+dev.off()
+
+pdf("20210827-figures/figure4/Figure4-5-C1-cluster-ratio-celltype-pieplot.pdf", width = 20, height = 15)
+ggplot() + 
+  geom_bar(C1.cluster.celltype.tb, mapping = aes(x = "", y = Freq, fill = Var2), width = 1, stat = "identity", position = "fill") + 
+  facet_wrap(~ Var1) + 
+  scale_fill_manual(values = spatial_clusters) +
+  coord_polar(theta = "y") + 
+  labs(x = "", y = "", title = "") + 
+  theme_bw() + 
+  theme(panel.grid=element_blank(), axis.text.x = element_blank())
+dev.off()
+```
+
+```{r FB-immune, DCS, immune cells的correlation， cluster分析}
+UE.FB.immune.SCT <- subset(UE.FB.immune.SCT, cellname != "cluster9-1")
+DSC.immune <- merge(UE.FB.immune.SCT, UE.immune.harmony)
+DSC.immune@active.ident <- factor(DSC.immune$cellname)
+save(DSC.immune, file = "DSC-FB-immune-SCT.RData")
+DSC.immune <- BuildClusterTree(DSC.immune)
+Tool(DSC.immune, slot = "BuildClusterTree")
+PlotClusterTree(DSC.immune)
+DSC.immune.avg <- AverageExpression(DSC.immune)
+DSC.immune.avg <- DSC.immune.avg$RNA
+
+pdf("20210827-figures/figure5/Figure5-DSC-immune-clustering.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(DSC.immune.avg))))
+dev.off()
+DSC.immune.avg.cor <- data.frame(cor(DSC.immune.avg), check.names = F)
+DSC.immune.avg.cor$Var1 <- rownames(DSC.immune.avg.cor)
+DSC.immune.avg.cor <- melt(DSC.immune.avg.cor)
+DSC.immune.avg.cor$Var1 <- factor(DSC.immune.avg.cor$Var1, levels = c(decidual.levels[1:7], immune.levels[10], immune.levels[1:9]))
+DSC.immune.avg.cor$variable <- factor(DSC.immune.avg.cor$variable, levels = c(decidual.levels[1:7], immune.levels[10], immune.levels[1:9]))
+pdf("20210827-figures/figure5/Figure5-DSC-immune-correlation.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_point(DSC.immune.avg.cor, mapping = aes(x = Var1, y = variable, color = value, size = value)) + 
+  scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) +
+  scale_size(range = c(3, 10)) + 
+  theme_bw()
+dev.off()
+#将DSC分为pre-DSC, 和matured-DSC
+DSC.immune <- RenameIdents(DSC.immune, "Top2a-D" = "matured-DSC", "Sfrp4-D" = "pre-DSC", "Lum-D" = "pre-DSC", 
+                           "Ptn-D" = "matured-DSC", "Gatm-D" = "matured-DSC", "Prl8a2-D" = "matured-DSC", "S100a8-D" = "matured-DSC")
+DSC.immune.merge.avg <- AverageExpression(DSC.immune, assays = "RNA")
+DSC.immune.merge.avg <- DSC.immune.merge.avg$RNA
+plclust(hclust(d = dist(x =1-cor(DSC.immune.merge.avg))))
+#选取figure1的major cells的DSC和Immune cells的DGEs做cluster分析
+DSC.immune.DEG <- unique(UE.harmony.pc30.markers[UE.harmony.pc30.markers$cluster %in% c("Decidual", "Immune"),]$gene)
+DSC.immune.avg.subset.gene <- DSC.immune.avg[DSC.immune.DEG, ]
+
+pdf("20210827-figures/figure5/Figure5-DSC-immune-DEGs-clustering.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(DSC.immune.avg.subset.gene))))
+dev.off()
+
+DSC.immune.expr <- data.frame(GetAssayData(DSC.immune, assay = "RNA"), check.names = F)
+DSC.immune.meta <- data.frame(cell = colnames(DSC.immune), cellname = DSC.immune$cellname)
+DSC.immune.meta <- DSC.immune.meta[DSC.immune.meta$cellname == "FB-immune", ]
+DSC.DEG <- unique(UE.harmony.pc30.markers[UE.harmony.pc30.markers$cluster %in% c("Decidual"),]$gene)
+immune.DEG <- unique(UE.harmony.pc30.markers[UE.harmony.pc30.markers$cluster %in% c("Immune"),]$gene)
+DSC.immune.expr <- DSC.immune.expr[, as.character(DSC.immune.meta$cell)]
+DSC.immune.expr.DSC <- DSC.immune.expr[DSC.DEG, ]
+DSC.immune.expr.immune <- DSC.immune.expr[immune.DEG, ]
+DSC.immune.DSC.immune.expr <- data.frame(DSC = apply(DSC.immune.expr.DSC, 2, mean), immune = apply(DSC.immune.expr.immune, 2, mean))
+DSC.immune.DSC.immune.expr <- melt(DSC.immune.DSC.immune.expr)
+pdf("20210827-figures/figure5/Figure5-03-DSC-immune-avg-expression-violin.pdf", width = 10, height = 10)
+ggplot() +
+  geom_violin(DSC.immune.DSC.immune.expr, mapping = aes(x = variable, y = value, fill = variable)) + 
+  scale_fill_manual(values = c("#5F9EA0", "#D2691E")) + 
+  theme_classic()
+dev.off()
+#将这些基因进行merge，然后做featureplot
+UE.FB.emb <- data.frame(Embeddings(UE.FB, reduction = "umap"), check.names = F)
+UE.FB.emb$cell <- rownames(UE.FB.emb)
+UE.FB.express <- data.frame(t(as.matrix(GetAssayData(UE.FB, assay = "RNA"))), check.names = F)
+UE.FB.express$cell <- rownames(UE.FB.express)
+UE.FB.express.immune <- UE.FB.express[, colnames(UE.FB.express) %in% immune.DEG]
+UE.FB.express.immune <- data.frame(apply(UE.FB.express.immune, 2, function(x){((x-min(x))/(max(x)-min(x)))}), check.names = F)
+UE.FB.express.immune <- data.frame(cell = rownames(UE.FB.express.immune), 
+                                   immune.avg = apply(UE.FB.express.immune, 1, mean))
+UE.FB.express.immune.umap <- merge(UE.FB.emb, UE.FB.express.immune, by = "cell", all = F)
+color <- brewer.pal(n = 11, "Spectral")
+color <- color[c(1:5,7:11,11)]
+pdf("20210827-figures/figure5/Figure5-DSCandiDSC-immune-avg-featureplot.pdf", width = 10, height = 10)
+ggplot() +
+  geom_point(UE.FB.express.immune.umap, mapping = aes(x = UMAP_1, y = UMAP_2, color = immune.avg), size = 1) +
+  scale_colour_gradientn(colours = rev(color)) + 
+  theme_classic()
+dev.off()
+
+load("../20210201-integrate/UE-immune-hamrony-rename.RData")
+DimPlot(UE.immune.harmony, label = T)
+UE.immune.harmony.emb <- data.frame(Embeddings(UE.immune.harmony, reduction = "umap"), check.names = F)
+UE.immune.harmony.emb$cell <- rownames(UE.immune.harmony.emb)
+UE.immune.harmony.expr <- data.frame(t(as.matrix(GetAssayData(UE.immune.harmony, assay = "RNA"))), check.names = F)
+UE.immune.harmony.expr.DSC <- UE.immune.harmony.expr[, colnames(UE.immune.harmony.expr) %in% DSC.DEG]
+UE.immune.harmony.expr.DSC <- data.frame(apply(UE.immune.harmony.expr.DSC, 2, function(x){((x-min(x))/(max(x)-min(x)))}), check.names = F)
+UE.immune.harmony.expr.DSC <- data.frame(cell = rownames(UE.immune.harmony.expr.DSC), 
+                                            DSC.avg = apply(UE.immune.harmony.expr.DSC, 1, mean))
+UE.immune.harmony.expr.DSC.umap <- merge(UE.immune.harmony.emb, UE.immune.harmony.expr.DSC, by = "cell", all = F)
+color <- brewer.pal(n = 11, "Spectral")
+color <- color[c(1:5,7:11,11)]
+pdf("20210827-figures/figure5/Figure5-IMMUNEandiDSC-DSC-avg-featureplot.pdf", width = 10, height = 10)
+ggplot() +
+  geom_point(UE.immune.harmony.expr.DSC.umap, mapping = aes(x = UMAP_1, y = UMAP_2, color = DSC.avg), size = 1) +
+  scale_colour_gradientn(colours = rev(color)) + 
+  theme_classic()
+dev.off()
+#分析一下iDSC整个群和DSC的哪个subclusters更接近，做一个clustering分析，再做一个每个群的DEG的富集分数分析
+UE.harmony.decidual.markers <- read.table("20210827-figures/files/UE-harmony-decidual-markers.csv", sep = ",", header = T, check.names = F)
+UE.FB.avg <- AverageExpression(UE.FB, assays = "RNA")
+UE.FB.avg <- UE.FB.avg$RNA
+UE.FB.avg.subset.gene <- UE.FB.avg[as.character(unique(UE.harmony.decidual.markers$gene)), ]
+
+pdf("20210827-figures/figure5/Figure5-iDSCandDSC-clustering-DSC-DEGs.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(UE.FB.avg.subset.gene))))
+dev.off()
+
+#计算每个DSC的亚群的基因，iDSC的表达量
+UE.FB.express.DSC.subcluster <- UE.FB.express[, as.character(unique(UE.harmony.decidual.markers$gene))]
+UE.FB.express.DSC.subcluster <- data.frame(apply(UE.FB.express.DSC.subcluster, 2, function(x){((x-min(x))/(max(x)-min(x)))}), check.names = F)
+UE.iDSC.DSC.score <- data.frame(cellname = rownames(UE.FB.express.DSC.subcluster))
+for (i in decidual.levels[1:7]) {
+  temp <- UE.FB.express.DSC.subcluster %>% 
+  dplyr::select(UE.harmony.decidual.markers[UE.harmony.decidual.markers$cluster == i, ]$gene)
+  UE.iDSC.DSC.score[, i] <- apply(temp, 1, mean)
+}
+UE.iDSC.DSC.score <- melt(UE.iDSC.DSC.score, id.vars = "cellname")
+pdf("20210827-figures/figure5/Figure5-iDS-DSC-enrich-score.pdf", width = 10, height = 10)
+ggplot() + 
+  geom_violin(UE.iDSC.DSC.score, mapping = aes(x = variable, y = value, fill = variable)) + 
+  scale_fill_manual(values = decidual.color[1:7]) +
+  theme_classic()
+dev.off()
+
+#看整体的相当于三组的DEGs, 在每组中取了800个细胞来进行差异基因的分析
+DSC.immune <- RenameIdents(DSC.immune, "Top2a-D" = "DSC", "Sfrp4-D" = "DSC", "Lum-D" = "DSC", "Ptn-D" = "DSC", "Gatm-D" = "DSC", "Prl8a2-D" = "DSC", "S100a8-D" = "DSC", "DC-1" = "Immune", "DC-2" = "Immune", "Pro-Mac" = "Immune", "Mono" = "Immune", "NK" = "Immune", "Mac" = "Immune", "T" = "Immune", "Neutrophil" = "Immune", "B" = "Immune")
+DSC.immune@active.ident <-factor(DSC.immune@active.ident, levels = c("DSC", "FB-immune", "Immune"))
+DSC.immune.count <- table(DSC.immune@active.ident)
+DSC.immune <- subset(DSC.immune, downsample = 800)
+DSC.immune.markers <- FindAllMarkers(DSC.immune, min.pct = 0.75, logfc.threshold = 0.5, only.pos = T)
+write.table(DSC.immune.markers, "20210827-figures/files/UE-DSC-FB-immune-immune-markers.csv", sep = ",", quote = F)
+pdf("20210827-figures/figure5/DSC-immune-iDSC-ptprc-expr.pdf", width = 10, height = 10)
+VlnPlot(DSC.immune, features = "Ptprc", pt.size = 0, assay = "RNA")
+dev.off()
+DSC.immune <- ScaleData(DSC.immune, features = rownames(DSC.immune))
+DSC.immune.markers.top10 <- DSC.immune.markers %>% group_by(cluster) %>% top_n(n = 10, avg_logFC)
+pdf("20210827-figures/figure5/Figure5-DSC-Immune-FB-immune-heatmap.pdf", width = 10, height = 10)
+DoHeatmap(DSC.immune, features = DSC.immune.markers$gene) + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+DSC.immune$active.ident <- DSC.immune@active.ident
+FeaturePlot(DSC.immune, features = DSC.immune.markers.top10[DSC.immune.markers.top10$cluster== "FB-immune", ]$gene)
+
+#分析三个subclusters和DSC的相似性
+load("20210827-figures/figure5/FB-immune-sc-subclusters-SCT.RData")
+DimPlot(FB.immune.SCT, label = T)
+FB.immune.SCT$cellname <- paste("iDSC-cluster", FB.immune.SCT@active.ident, sep = "")
+UE.DSC.FB.immune <- merge(UE.decidual, FB.immune.SCT)
+UE.DSC.FB.immune@active.ident <- factor(UE.DSC.FB.immune$cellname)
+save(UE.DSC.FB.immune, file = "DSC-FB-immune.RData")
+UE.DSC.FB.immune.RNA <- AverageExpression(UE.DSC.FB.immune, assays = "RNA")
+UE.DSC.FB.immune.RNA <- UE.DSC.FB.immune.RNA$RNA
+pdf("20210827-figures/figure5/Figure5-iDSC-and-DSC-clustering.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(UE.DSC.FB.immune.RNA))))
+dev.off()
+UE.DSC.FB.immune.RNA.cor <- data.frame(cor(UE.DSC.FB.immune.RNA), check.names = F)
+UE.DSC.FB.immune.RNA.cor$Var1 <- rownames(UE.DSC.FB.immune.RNA.cor)
+UE.DSC.FB.immune.RNA.cor <- melt(UE.DSC.FB.immune.RNA.cor)
+UE.DSC.FB.immune.RNA.cor$Var1 <- factor(UE.DSC.FB.immune.RNA.cor$Var1, levels = c(decidual.levels[1:7], "iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2"))
+UE.DSC.FB.immune.RNA.cor$variable <- factor(UE.DSC.FB.immune.RNA.cor$variable, levels = c(decidual.levels[1:7], "iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2"))
+pdf("20210827-figures/figure5/Figure5-iDSC-and-DSC-correlation.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_point(UE.DSC.FB.immune.RNA.cor, mapping = aes(x = Var1, y = variable, color = value, size = value)) + 
+  scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) +
+  scale_size(range = c(3, 10)) + 
+  theme_bw()
+dev.off()
+
+#分析三个subclusters和immune的相似性
+load("20210827-figures/figure5/FB-immune-sc-subclusters-SCT.RData")
+DimPlot(FB.immune.SCT, label = T)
+FB.immune.SCT$cellname <- paste("iDSC-cluster", FB.immune.SCT@active.ident, sep = "")
+UE.immune.harmony.s <- subset(UE.immune.harmony, subset = cellname != "FB-immune")
+UE.immune.FB.immune <- merge(UE.immune.harmony.s, FB.immune.SCT)
+UE.immune.FB.immune@active.ident <- factor(UE.immune.FB.immune$cellname)
+save(UE.immune.FB.immune, file = "Immune-FB-immune-merge.RData")
+UE.immune.FB.immune.RNA <- AverageExpression(UE.immune.FB.immune, assays = "RNA")
+UE.immune.FB.immune.RNA <- UE.immune.FB.immune.RNA$RNA
+pdf("20210827-figures/figure5/Figure5-iDSC-and-immune-clustering.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(UE.immune.FB.immune.RNA))))
+dev.off()
+UE.immune.FB.immune.RNA.cor <- data.frame(cor(UE.immune.FB.immune.RNA), check.names = F)
+UE.immune.FB.immune.RNA.cor$Var1 <- rownames(UE.immune.FB.immune.RNA.cor)
+UE.immune.FB.immune.RNA.cor <- melt(UE.immune.FB.immune.RNA.cor)
+UE.immune.FB.immune.RNA.cor$Var1 <- factor(UE.immune.FB.immune.RNA.cor$Var1, levels = c(immune.levels[1:9], "iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2"))
+UE.immune.FB.immune.RNA.cor$variable <- factor(UE.immune.FB.immune.RNA.cor$variable, levels = c(immune.levels[1:9], "iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2"))
+pdf("20210827-figures/figure5/Figure5-iDSC-and-immune-correlation.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_point(UE.immune.FB.immune.RNA.cor, mapping = aes(x = Var1, y = variable, color = value, size = value)) + 
+  scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) +
+  scale_size(range = c(3, 10)) + 
+  theme_bw()
+dev.off()
+UE.immune.FB.immune.NK_vs_iDSC2.markers <- FindMarkers(UE.immune.FB.immune, ident.1 = "NK", ident.2 = "iDSC-cluster2", min.pct = 0.5, logfc.threshold = 0.5)
+
+#三个iDSC的subclusters与免疫和S100a8-D类群的相似性
+library(gggibbous)
+UE.DSC.FB.immune.RNA.cor.1 <- UE.DSC.FB.immune.RNA.cor[UE.DSC.FB.immune.RNA.cor$Var1 %in% 
+                                                         c("iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2") & 
+                                                         UE.DSC.FB.immune.RNA.cor$variable %in% c("S100a8-D"), ]
+UE.immune.FB.immune.RNA.cor.1 <- UE.immune.FB.immune.RNA.cor[UE.immune.FB.immune.RNA.cor$Var1 %in% 
+                                                             c("iDSC-cluster0", "iDSC-cluster1", "iDSC-cluster2") &
+                                                             UE.immune.FB.immune.RNA.cor$variable %in% immune.levels[1:9], ]
+UE.DSC.immune.FB.immune.RNA.cor.1 <- rbind(UE.DSC.FB.immune.RNA.cor.1, UE.immune.FB.immune.RNA.cor.1)
+pdf("20210827-figures/figure5/Figure5-iDSC-S100a8-immune-correlation-moon.pdf", width = 5, height = 5)
+ggplot() +
+  geom_moon(UE.DSC.immune.FB.immune.RNA.cor.1, show.legend = T,
+            mapping = aes(x = Var1, y = variable, fill = value, ratio = value^2)) + 
+  scale_fill_gradientn(colors = rev(brewer.pal(n = 11, "Spectral"))) +
+  theme_bw()
+dev.off()
+#iDSC 3个subclusters中DSC的DEGs的表达pattern
+decidual.gene <- c("Lum", "Dcn", "Postn", "Sfrp4", "Igfbp3", "Hsd11b2", "Top2a", "Ube2c", "Mki67", "Hist1h1b", "Ptn", "Bmp2", "Hmgn5","Gatm", "Anxa8", "Cxcl14", "S100a8", "Angpt2", "Psca", "Prl8a2", "Erv3", "Htra1", "Rxfp1", "Wnt4", "Hand2", "Twist1", "Zeb1")
+FeaturePlot(FB.immune.SCT, features = decidual.gene, ncol = 7, pt.size = 0.1)
+```
+
+```{r 分析FB-immune的release和outgoing的信号， NK/Pro-mac/cycling-DSC}
+load("../20210201-integrate/UE-harmony-cellchat-subname-results-20210903.RData")
+df.net.LR <- subsetCommunication(UE.harmony.cellchat)
+df.net.LR.netP <- subsetCommunication(UE.harmony.cellchat, slot.name = "netP")
+df.net.LR.netP.FB.immune.incoming <- df.net.LR.netP[df.net.LR.netP$source == "FB-immune" & df.net.LR.netP$target %in% c("Pro-Mac", "NK", "Top2a-D"), ]
+df.net.LR.netP.FB.immune.incoming <- aggregate(df.net.LR.netP.FB.immune.incoming[, 4], by = list(df.net.LR.netP.FB.immune.incoming$pathway_name), sum)
+df.net.LR.FB.outgoing <- df.net.LR[df.net.LR$source=="FB-immune" & df.net.LR$target %in% c("FB-immune", "Pro-Mac", "NK", "Top2a-D"), ]
+df.net.LR.FB.outgoing$cell_L_R <- paste(df.net.LR.FB.outgoing$source, df.net.LR.FB.outgoing$target, sep = "_")
+df.net.LR.FB.outgoing <- dcast(df.net.LR.FB.outgoing[, c(5, 8, 12)], interaction_name_2 ~ cell_L_R, value.var = "prob")
+df.net.LR.FB.outgoing[is.na(df.net.LR.FB.outgoing)] <- 0
+rownames(df.net.LR.FB.outgoing) <- df.net.LR.FB.outgoing$interaction_name_2
+df.net.LR.FB.outgoing <- df.net.LR.FB.outgoing[, -1]
+pdf("20210827-figures/figure5/Figure5-FB-immune-relaease-heatmap.pdf", width = 10, height = 10)
+pheatmap(df.net.LR.FB.outgoing, scale = "row", cluster_rows = T, cluster_cols = F)
+dev.off()
+
+netVisual_chord_gene(UE.harmony.cellchat, sources.use = 18, targets.use = c(4,12,16), slot.name = "netP")
+UE.harmony.cellchat.FB.release <- subsetCellChat(UE.harmony.cellchat, idents.use = c("FB-immune", "Pro-Mac", "NK", "Top2a-D"))
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "PTN")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "SPP1")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "MIF")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "GALECTIN")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "VISFATIN")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "CD137")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "ANGPT")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "CCL")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "WNT")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "ncWNT")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "TGFb")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "BMP")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "PROS")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "PDGF")
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "EGF")
+
+#Mac incoming
+netVisual_chord_gene(UE.harmony.cellchat, sources.use = c(12, 16, 4, 18), targets.use = c(12), slot.name = "netP")
+UE.harmony.cellchat.FB.incoming <- subsetCellChat(UE.harmony.cellchat, idents.use = c("FB-immune", "Pro-Mac", "NK", "Top2a-D"))
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = "PTN")
+#NK incoming
+netVisual_chord_gene(UE.harmony.cellchat, sources.use = c(12, 16, 4, 18), targets.use = c(16), slot.name = "netP")
+#Top2a-D incoming
+netVisual_chord_gene(UE.harmony.cellchat, sources.use = c(12, 16, 4, 18), targets.use = c(4), slot.name = "netP")
+
+#筛选出的通路
+color1 <- c("#FB8072", "#B2DF8A", "#CAB2D6", "#6A3D9A")
+#FB release的 增殖相关
+pdf("20210827-figures/figure5/Figure5-01-FB-imune-release-proliferation.pdf", width = 8, height = 15)
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = c("WNT", "ncWNT", "BMP", "PROS", "PDGF"), color.use = color1)
+dev.off()
+
+#FB release的 免疫招募相关
+pdf("20210827-figures/figure5/Figure5-01-FB-imune-release-immune.pdf", width = 8, height = 8)
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = c("CCL", "PTN"), color.use = color1)
+dev.off()
+
+#NK Pro-Mac incoming的 免疫招募,抑制免疫反应相关
+pdf("20210827-figures/figure5/Figure5-01-NK-Pro-mac-incoming.pdf", width = 8, height = 15)
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = c("COMPLEMENT", "MK", "MIF", "GALECTIN", "CD137"), color.use = color1)
+dev.off()
+
+#Cycling DSC incoming的 增殖相关
+pdf("20210827-figures/figure5/Figure5-01-Cycling-DSC-incoming.pdf", width = 8, height = 8)
+plotGeneExpression(UE.harmony.cellchat.FB.release, signaling = c("PARs", "TGFb"), color.use = color1)
+dev.off()
+#所有的interactions用其他方式表示
+interactions <- c("CCL", "PTN", "MK", "COMPLEMENT", "MIF", "CD137", "GALECTIN", "WNT", "ncWNT", "BMP", "PROS", "PDGF", "PARs", "TGFb")
+pairLR <- extractEnrichedLR(UE.harmony.cellchat, signaling = interactions, geneLR.return = FALSE)
+#dotplot
+pdf("20210827-figures/figure5/Figure5-02-NK-Pro-mac-Top2a-FB-immune-interactions-dotplot.pdf", width = 6, height = 10)
+netVisual_bubble(UE.harmony.cellchat, sources.use = c(12, 18, 16, 4), targets.use = c(12, 18, 16, 4), pairLR.use = pairLR)
+dev.off()
+#heatmap
+df.net.LR.interaction <- df.net.LR[df.net.LR$interaction_name %in% pairLR$interaction_name & 
+                                     df.net.LR$source %in% c("FB-immune", "Pro-Mac", "NK", "Top2a-D") & 
+                                     df.net.LR$target %in% c("FB-immune", "Pro-Mac", "NK", "Top2a-D"), c(1, 2, 5, 8)]
+df.net.LR.interaction$cell_LR <- paste(df.net.LR.interaction$source, df.net.LR.interaction$target, sep = "->")
+df.net.LR.interaction <- dcast(df.net.LR.interaction[, 3:5], cell_LR ~ interaction_name_2, value.var = "prob")
+rownames(df.net.LR.interaction) <- df.net.LR.interaction$cell_LR
+df.net.LR.interaction <- df.net.LR.interaction[, -1]
+df.net.LR.interaction[is.na(df.net.LR.interaction)] <- 0
+color <- brewer.pal(11, "RdBu")
+color <- color[c(1:5, 7:11)]
+pdf("20210827-figures/figure5/Figure5-02-NK-Pro-mac-Top2a-FB-immune-interactions-heatmap.pdf", width = 10, height = 5)
+pheatmap(df.net.LR.interaction, scale = "column", cluster_rows = F, cluster_cols = T, 
+         color = colorRampPalette(colors = rev(color))(100))
+dev.off()
+#chrod plot (1) FB-immune outgoing, (2) immune cells incoming, (3) Top2a-D incoming
+#1)
+FB.release <- c("WNT", "ncWNT", "BMP", "PROS", "PDGF", "CCL", "PTN")
+pairLR <- extractEnrichedLR(UE.harmony.cellchat, signaling = FB.release, geneLR.return = FALSE)
+netVisual_chord_gene(UE.harmony.cellchat, sources.use = 18, targets.use = c(12, 18, 16, 4), slot.name = "netP", pairLR.use = pairLR)
+#2)
+immune.incoming <- c("CCL", "PTN", "COMPLEMENT", "MK", "MIF", "CD137", "GALECTIN")
+pairLR <- extractEnrichedLR(UE.harmony.cellchat, signaling = immune.incoming, geneLR.return = FALSE)
+pdf("20210827-figures/figure5/Figure5-02-NK-Pro-macincoming-chord.pdf")
+netVisual_chord_gene(UE.harmony.cellchat.FB.release, sources.use = c(1:4), targets.use = c(2,3), slot.name = "netP", pairLR.use = pairLR, color.use = color1, transparency = 0.1)
+dev.off()
+
+#FB-immune, Cycling-DSC, Pro-Mac, NK四个类群在空间的分布
+B6.cell_type.levels <- c(FB.immune.SCT.levels[1:8], immune.levels[c(1:4,7:10)], EC.levels[1:4], major.levels[4:5], major.levels[7:11], tropho.levels[c(1,3:5)])
+B6.color <- c(rep("#E7E7E7", 2), "#FB8072", rep("#E7E7E7", 7), "#B2DF8A", "#E7E7E7", 
+              "#CAB2D6", rep("#E7E7E7", 2), "#6A3D9A", rep("#E7E7E7", 15))
+pdf("20210827-figures/figure5/Figure5-B6-bin50-FB-immune-Pro-Mac-pro-DSC-immune.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = B6.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+
+#Pro-mac, NK, Cycling-DSC在ST中的分布
+B6.cluster.celltype.tb.1 <- data.frame(table(B6.bin50.celltype.df$cell_type, B6.bin50.celltype.df$spatial_cluster))
+B6.cluster.celltype.tb.1 <- B6.cluster.celltype.tb.1[B6.cluster.celltype.tb.1$Var1 %in% c("Pro-Mac", "NK", "Top2a-D"), ]
+pdf("20210827-figures/figure5/Figure5-02-NK-Pro-mac-Top2a-ST-cluster-proportion.pdf", width = 10, height = 10)
+ggplot() + 
+  geom_bar(B6.cluster.celltype.tb.1, mapping = aes(x = Var1, y = Freq, fill = Var2), stat = "identity", position = "fill") + 
+  scale_fill_manual(values = spatial_clusters) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), 
+        panel.grid = element_blank())
+dev.off()
+```
+
+```{r FB-immune 分亚群}
+load("FB-immune.RData")
+FB.immune.harmony <- NormalizeData(FB.immune)
+FB.immune.harmony <- FindVariableFeatures(FB.immune.harmony, nfeatures = 2000, selection.method = "vst")
+FB.immune.harmony <- RunPCA(FB.immune.harmony, features = VariableFeatures(FB.immune.harmony))
+FB.immune.harmony <- RunHarmony(FB.immune.harmony, "time", plot_convergence = TRUE, reduction = "pca")
+FB.immune.harmony <- RunUMAP(FB.immune.harmony, reduction = "harmony", dims = 1:8)
+FB.immune.harmony <- FindNeighbors(FB.immune.harmony, reduction = "harmony", dims = 1:8)
+FB.immune.harmony <- FindClusters(FB.immune.harmony, resolution = 0.1)
+FB.immune.harmony.markers <- FindAllMarkers(FB.immune.harmony, min.pct = 0.5, logfc.threshold = 0.5, only.pos = T)
+FB.immune.harmony.markers.top10 <- FB.immune.harmony.markers %>% group_by(cluster) %>% top_n(n = 10, avg_logFC)
+DoHeatmap(FB.immune.harmony, features = FB.immune.harmony.markers.top10$gene)
+
+FB.immune.harmony <- SCTransform(FB.immune.harmony, ncells = 3000, verbose = FALSE, return.only.var.genes = FALSE)
+FB.immune.harmony <- RunPCA(FB.immune.harmony)
+FB.immune.harmony <- RunUMAP(FB.immune.harmony, dims = 1:30)
+#对应空间的位置
+FB.immune.SCT <- FB.immune
+FB.immune.SCT <- SCTransform(FB.immune.SCT, ncells = 3000, verbose = FALSE, return.only.var.genes = FALSE)
+FB.immune.SCT <- RunPCA(FB.immune.SCT)
+FB.immune.SCT <- RunUMAP(FB.immune.SCT, dims = 1:30)
+FB.immune.SCT <- FindNeighbors(FB.immune.SCT, dims = 1:20)
+FB.immune.SCT <- FindClusters(FB.immune.SCT, resolution = 0.1)
+FB.immune.SCT.markers <- FindAllMarkers(FB.immune.SCT, min.pct = 0.5, logfc.threshold = 0.5, only.pos = T)
+FB.immune.SCT.markers.top10 <- FB.immune.SCT.markers %>% group_by(cluster) %>% top_n(n = 50, avg_logFC)
+save(FB.immune.SCT, file = "20210827-figures/figure5/FB-immune-sc-subclusters-SCT.RData")
+pdf("20210827-figures/figure5/Figure5-FB-immune-subclusters-all-DEGs-heatmap.pdf", width = 10, height = 10)
+DoHeatmap(FB.immune.SCT, features = FB.immune.SCT.markers$gene) + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+pdf("20210827-figures/figure5/Figure5-FB-immune-subclusters-UMAP.pdf", width = 6.5, height = 6)
+DimPlot(FB.immune.SCT, pt.size = 1, label = F)
+dev.off()
+#FB-immune 三群的marker基因做个GO分析
+enrich.GO.function <- function(geneset){
+  enrich.GO <- enrichGO(gene = geneset,
+                        OrgDb = "org.Mm.eg.db",
+                        keyType = "SYMBOL",
+                        ont = "BP",
+                        pAdjustMethod = "BH",
+                        pvalueCutoff = 0.05)
+  enrich.GO <- simplify(enrich.GO, cutoff = 0.7, by = "p.adjust", select_fun = min)
+  enrich.GO <- enrich.GO@result[enrich.GO@result$pvalue<0.01, ]
+  return(enrich.GO)
+}
+FB.immune.SCT.GO.df <- data.frame()
+for (c in levels(FB.immune.SCT.markers$cluster)) {
+  print(c)
+  geneset <- FB.immune.SCT.markers[FB.immune.SCT.markers$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  FB.immune.SCT.GO.df <- rbind(FB.immune.SCT.GO.df, tmp)
+}
+FB.immune.SCT.GO.df.top10 <- FB.immune.SCT.GO.df %>% group_by(cluster) %>% top_n(n = 10, -pvalue)
+FB.immune.SCT.GO.df.top10$GO_Term <- factor(FB.immune.SCT.GO.df.top10$GO_Term, levels = rev(unique(FB.immune.SCT.GO.df.top10$GO_Term)))
+pdf("20210827-figures/figure5/FB-immune-sc-subclusters-SCT-DEGs-GO-BP.pdf", width = 10, height = 15)
+ggplot() + 
+  geom_bar(FB.immune.SCT.GO.df.top10, mapping = aes(x = -log10(qvalue), y = GO_Term, fill = cluster), stat = "identity") + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+
+#subset 空间的位置
+B6.bin50.FB.immune <- subset(B6.bin50, celltype == "FB-immune")
+B6.bin50.FB.immune <- SCTransform(B6.bin50.FB.immune, assay = "Spatial", verbose = FALSE)
+B6.bin50.FB.immune <- RunPCA(B6.bin50.FB.immune, assay = "SCT", verbose = F)
+ElbowPlot(B6.bin50.FB.immune, ndims = 50)
+B6.bin50.FB.immune <- FindNeighbors(B6.bin50.FB.immune, reduction = "pca", dims = 1:30)
+B6.bin50.FB.immune <- FindClusters(B6.bin50.FB.immune, verbose = T, resolution = 0.3)
+B6.bin50.FB.immune <- RunUMAP(B6.bin50.FB.immune, reduction = "pca", dims = 1:30)
+anchors <- FindTransferAnchors(reference = FB.immune.SCT, query = B6.bin50.FB.immune, normalization.method = "SCT")
+predictions.assay <- TransferData(anchorset = anchors, refdata = FB.immune.SCT$seurat_clusters, 
+                                  prediction.assay = TRUE, weight.reduction = B6.bin50[["pca"]], dims = 1:30)
+B6.bin50.FB.immune[["predictions"]] <- predictions.assay
+DefaultAssay(B6.bin50.FB.immune) <- "predictions"
+B6.bin50.FB.immune.celltype.score <- GetAssayData(B6.bin50.FB.immune, slot = "data")
+B6.bin50.FB.immune.celltype.max <- apply(B6.bin50.FB.immune.celltype.score, 2, function(x) rownames(B6.bin50.FB.immune.celltype.score)[which.max(x)])
+B6.bin50.FB.immune.celltype.df <- data.frame(cell_type = B6.bin50.FB.immune.celltype.max, 
+                                cell_name = names(B6.bin50.FB.immune.celltype.max), 
+                                GetTissueCoordinates(B6.bin50.FB.immune), 
+                                spatial_clusters = B6.bin50.FB.immune$seurat_clusters)
+ggplot() + 
+  geom_point(B6.bin50.FB.immune.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 0.5) +
+  theme_classic() + 
+  theme(axis.text = element_blank()) + 
+  facet_wrap(~cell_type)
+
+#分亚群之后和DSC/immune cell之间的cluster 或者correlation分析
+UE.immune.harmony <- subset(UE.immune.harmony, cellname != "FB-immune")
+FB.immune.SCT$cellname <- paste("FB-", FB.immune.SCT$seurat_clusters, sep = "")
+FB.immune.SCT <- NormalizeData(FB.immune.SCT)
+FB.immune.sub.immune <- merge(UE.immune.harmony, FB.immune.SCT)
+FB.immune.sub.immune@active.ident <- factor(FB.immune.sub.immune$cellname)
+FB.immune.sub.immune.RNA <- AverageExpression(FB.immune.sub.immune, assays = "RNA", slot = "data")
+plclust(hclust(d = dist(x =1-cor(FB.immune.sub.immune.RNA$RNA))))
+FB.immune.sub.immune.RNA.cor <- cor(FB.immune.sub.immune.RNA$RNA)
+FB.immune.sub.immune.RNA.cor <- FB.immune.sub.immune.RNA.cor[c(1:3, 7:12), 4:6]
+
+FB.immune.sub.decidual <- merge(UE.decidual, FB.immune.SCT)
+FB.immune.sub.decidual@active.ident <- factor(FB.immune.sub.decidual$cellname)
+FB.immune.sub.decidual.RNA <- AverageExpression(FB.immune.sub.decidual, assays = "RNA", slot = "data")
+plclust(hclust(d = dist(x =1-cor(FB.immune.sub.decidual.RNA$RNA))))
+FB.immune.sub.decidual.RNA.cor <- cor(FB.immune.sub.decidual.RNA$RNA)
+FB.immune.sub.decidual.RNA.cor <- FB.immune.sub.decidual.RNA.cor[c(1, 5:11), 2:4]
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

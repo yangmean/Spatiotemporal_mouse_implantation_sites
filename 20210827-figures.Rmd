@@ -1,0 +1,1967 @@
+---
+title: "20210827-figures"
+author: "Min Yang"
+date: "8/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library packages}
+library(ggplot2)
+library(Seurat)
+library(reshape2)
+library(dplyr)
+library(RColorBrewer)
+library(pheatmap)
+library(patchwork)
+enrich.GO.function <- function(geneset){
+  enrich.GO <- enrichGO(gene = geneset,
+                        OrgDb = "org.Mm.eg.db",
+                        keyType = "SYMBOL",
+                        ont = "BP",
+                        pvalueCutoff = 1,
+                        pAdjustMethod = "BH")
+  enrich.GO <- simplify(enrich.GO, cutoff = 0.7, by = "p.adjust", select_fun = min)
+  return(enrich.GO)
+}
+```
+
+```{r parameter settting}
+source("../../../01.scripts/StackedVlnPlot.R")
+major.color <- c("#5F9EA0", "#D2691E", "#20B2AA", "#6B8E23", "#006400", "#6495ED", "#8B0000", "#4B0082", "#CD5C5C", "#DAA520", "#9370DB", "#8B4513", "#FFD700")
+decidual.color <- c("#6A5ACD","#9ACD32","#FB8072","#8DD3C7","#08519C","#FDB462","#228B22","#FCCDE5","#D9D9D9")
+immune.color <- c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#2E8B57", "#CAB2D6", "#FF7F00", "#EAC075", "#6A3D9A")
+EC.color <- c("#7B68EE", "#1B9E77", "#D95F02", "#00BFFF", "#E7298A", "#CCEBC5")
+tropho.color <- c("#3CB371", "#DA70D6", "#4682B4", "#483D8B", "#008B8B", "#FF8C00")
+
+major.levels <- c("Decidual", "Immune", "EC", "SMC", "Epithelial", "TP", "Erythroid", "Mesenchymal stem cell", "Mesenchymal-epithelial transition", "Blood P", "Viseral endoderm", "Allantois mesodermal", "Fetal EC")
+decidual.levels <- c("Lum-D", "Sfrp4-D", "Top2a-D", "Ptn-D", "Gatm-D", "S100a8-D", "Prl8a2-D", "cluster9-1", "Prg-")
+immune.levels <- c("Mono", "Mac", "Pro-Mac", "DC-1", "DC-2", "Neutrophil", "NK", "B", "T", "FB-immune")
+EC.levels <- c("EC-0", "EC-1", "EC-2", "EC-3", "EC-4", "EC-5")
+tropho.levels <- c("tropho-0", "tropho-1", "tropho-2", "tropho-3", "tropho-4", "tropho-5")
+
+annotation.color <- list(cell_type = c("Lum-D"="#6A5ACD", "Sfrp4-D"="#9ACD32", "Top2a-D"="#FB8072","Ptn-D"="#8DD3C7","Gatm-D"="#08519C",
+                                       "S100a8-D"="#FDB462","Prl8a2-D"="#228B22", "cluster9-1"="#FCCDE5", "Mono"="#A6CEE3",
+                                       "Mac"="#1F78B4","Pro-Mac"="#B2DF8A","DC-1"="#33A02C", "NK"="#CAB2D6",
+                                       "B"="#FF7F00","T"="#FDBF6F","FB-immune"="#6A3D9A","EC-0"="#7B68EE", "EC-1"="#1B9E77",
+                                       "EC-2"="#D95F02","EC-3"="#00BFFF", "SMC"="#6B8E23","Epithelial"="#006400","Erythroid"="#8B0000", 
+                                       "Mesenchymal stem cell"="#4B0082","Mesenchymal-epithelial transition"="#CD5C5C",
+                                       "Blood P"="#DAA520", "Allantois mesodermal"="#8B4513",
+                                       "Viseral endoderm"="#9370DB", "Fetal EC" = "#FFD700", "tropho-0"="#3CB371",
+                                       "tropho-1"="#DA70D6", "tropho-2"="#4682B4","tropho-3"="#483D8B","tropho-4"="#008B8B"))
+```
+
+```{r Figure1}
+UE.harmony.pc30@active.ident <- factor(UE.harmony.pc30@active.ident, levels = major.levels)
+UE.harmony.pc30.markers <- FindAllMarkers(UE.harmony.pc30, min.pct = 0.5, logfc.threshold = 0.5, only.pos = T)
+write.table(UE.harmony.pc30.markers, file = "20210827-figures/files/UE-harmony-major-DEGs.csv", sep = ",", row.names = F, col.names = T, quote = F)
+UE.harmony.pc30.markers.top20 <- UE.harmony.pc30.markers %>% group_by(cluster) %>% top_n(n = 20, avg_logFC)
+write.table(UE.harmony.pc30.markers.top20, file = "20210827-figures/files/UE-harmony-major-DEGs-top20.csv", sep = ",", row.names = F, col.names = T, quote = F)
+pdf("20210827-figures/figure1/Figure1-major-UMAP.pdf", width = 12, height = 9)
+DimPlot(UE.harmony.pc30, cols = major.color, pt.size = 0.5)
+dev.off()
+UE.harmony.pc30.U <- subset(UE.harmony.pc30, subset = orig.ident %in% c("U55.E65", "U65","U.E75","U85.1","U85.2","U95", "U105"))
+UE.harmony.pc30.E <- subset(UE.harmony.pc30, subset = orig.ident %in% c("E85","E95","E105"))
+
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual$cellname <- gsub("Postn-D", "Lum-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Ifit1-D", "S100a8-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.decidual$cellname)
+UE.decidual$cellname <- factor(UE.decidual$cellname, levels = decidual.levels)
+
+UE.decidual.U.table <- table(UE.decidual$time, UE.decidual$cellname)
+UE.decidual.U.table <- UE.decidual.U.table[, 1:7]
+UE.decidual.U.table <- data.frame(apply(UE.decidual.U.table, 2, function(x) {x/table(UE.harmony.pc30.U$time)*100}), check.names = F)
+UE.decidual.U.table$time <- rownames(UE.decidual.U.table)
+UE.decidual.U.table <- melt(UE.decidual.U.table, id.vars = "time")
+UE.decidual.U.table$time <- factor(UE.decidual.U.table$time, levels = c("T55", "T65", "T75", "T85", "T95", "T105"))
+UE.decidual.U.table$variable <- factor(UE.decidual.U.table$variable, levels = decidual.levels[1:7])
+decidual.proportion <- ggplot() + 
+  geom_bar(UE.decidual.U.table, mapping = aes(x = time, y = value, fill = variable), stat = "identity") + 
+  scale_fill_manual(values = decidual.color[1:7]) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), panel.grid = element_blank())
+
+UE.immune.i.table <- table(UE.immune.harmony$time, UE.immune.harmony$cellname)
+UE.immune.i.table <- data.frame(apply(UE.immune.i.table, 2, function(x) {x/table(UE.harmony.pc30.U$time)*100}), check.names = F)
+UE.immune.i.table$time <- rownames(UE.immune.i.table)
+UE.immune.i.table <- melt(UE.immune.i.table, id.vars = "time")
+UE.immune.i.table$time <- factor(UE.immune.i.table$time, levels = c("T55", "T65", "T75", "T85", "T95", "T105"))
+UE.immune.i.table$variable <- factor(UE.immune.i.table$variable, levels = immune.levels)
+immune.proportion <- ggplot() + 
+  geom_bar(UE.immune.i.table, mapping = aes(x = time, y = value, fill = variable), stat = "identity") + 
+  scale_fill_manual(values = immune.color) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), panel.grid = element_blank())
+
+UE.EC$cellname <- factor(UE.EC@active.ident)
+UE.EC.table <- table(UE.EC$time, UE.EC$cellname)
+UE.EC.table <- data.frame(apply(UE.EC.table, 2, function(x) {x/table(UE.harmony.pc30.U$time)*100}), check.names = F)
+UE.EC.table$time <- rownames(UE.EC.table)
+UE.EC.table <- melt(UE.EC.table, id.vars = "time")
+UE.EC.table$time <- factor(UE.EC.table$time, levels = c("T55", "T65", "T75", "T85", "T95", "T105"))
+UE.EC.table$variable <- factor(UE.EC.table$variable, levels = EC.levels)
+EC.proportion <- ggplot() + 
+  geom_bar(UE.EC.table, mapping = aes(x = time, y = value, fill = variable), stat = "identity") + 
+  scale_fill_manual(values = EC.color) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), panel.grid = element_blank())
+
+UE.tropho$cellname <- factor(UE.tropho@active.ident)
+UE.tropho.table <- table(UE.tropho$time, UE.tropho$cellname)
+UE.tropho.table <- data.frame(apply(UE.tropho.table, 2, function(x) {x/table(UE.harmony.pc30.E$time)*100}), check.names = F)
+UE.tropho.table[1, ] <- 0
+UE.tropho.table[2, ] <- 0
+UE.tropho.table[3, ] <- 0
+UE.tropho.table$time <- rownames(UE.tropho.table)
+UE.tropho.table <- melt(UE.tropho.table, id.vars = "time")
+UE.tropho.table$time <- factor(UE.tropho.table$time, levels = c("T55", "T65", "T75", "T85", "T95", "T105"))
+UE.tropho.table$variable <- factor(UE.tropho.table$variable, levels = tropho.levels)
+tropho.proportion <- ggplot() + 
+  geom_bar(UE.tropho.table, mapping = aes(x = time, y = value, fill = variable), stat = "identity") + 
+  scale_fill_manual(values = tropho.color) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), panel.grid = element_blank())
+pdf("20210827-figures/figure1/Figure1-DSC-immune-EC-tropho-proportion.pdf", width = 10.2, height = 9)
+cowplot::plot_grid(decidual.proportion, immune.proportion, EC.proportion, tropho.proportion)
+dev.off()
+
+pdf("20210827-figures/figure1/Figure1-decidual-UMAP.pdf", width = 10.2, height = 9)
+DimPlot(UE.decidual, cols = decidual.color, pt.size = 1, group.by = "cellname")
+dev.off()
+load("../20210201-integrate/UE-immune-hamrony-rename.RData")
+UE.immune.harmony$cellname <- factor(UE.immune.harmony$cellname, levels = immune.levels)
+pdf("20210827-figures/figure1/Figure1-immune-UMAP.pdf", width = 10.2, height = 9)
+DimPlot(UE.immune.harmony, cols = immune.color, pt.size = 1, group.by = "cellname")
+dev.off()
+load("../20210201-integrate/UE-EC-harmony-pc30-rename.RData")
+pdf("20210827-figures/figure1/Figure1-EC-UMAP.pdf", width = 10, height = 9)
+DimPlot(UE.EC, cols = EC.color, pt.size = 1)
+dev.off()
+load("../20210201-integrate/UE-trophoblast-hamrony.RData")
+pdf("20210827-figures/figure1/Figure1-Tropho-UMAP.pdf", width = 10, height = 9)
+DimPlot(UE.tropho, cols = tropho.color, pt.size = 1)
+dev.off()
+UE.tropho.markers <- FindAllMarkers(UE.tropho, logfc.threshold = 0.25, min.pct = 0.25, only.pos = T)
+UE.tropho.markers.top10 <- UE.tropho.markers %>% group_by(cluster) %>% top_n(n = 5, avg_logFC)
+pdf("20210827-figures/figure1/Figure1-tropho-markers-top10-heatmap-min05-fc05.pdf", width = 10, height = 10)
+DoHeatmap(UE.tropho, features = UE.tropho.markers.top10$gene, group.colors = tropho.color[1:6]) + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+
+tropho.GO.df <- data.frame()
+for (c in levels(UE.tropho.markers$cluster)) {
+  print(c)
+  geneset <- UE.tropho.markers[UE.tropho.markers$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  tropho.GO.df <- rbind(tropho.GO.df, tmp)
+}
+tropho.GO.df$GO_Term <- factor(tropho.GO.df$GO_Term, levels = rev(unique(tropho.GO.df$GO_Term)))
+tropho.GO.df$cluster <- factor(tropho.GO.df$cluster, levels = tropho.levels[1:6])
+tropho.GO.df.top5 <- tropho.GO.df %>% group_by(cluster) %>% top_n(n = 5, -pvalue)
+write.table(tropho.GO.df, file = "20210827-figures/files/UE-tropho-GO.csv", sep = "\t", quote = F)
+write.table(UE.tropho.markers, file = "20210827-figures/files/UE-tropho-markers.csv", sep = ",", quote = F)
+UE.tropho.markers.top20 <- UE.tropho.markers %>% group_by(cluster) %>% top_n(n = 20, avg_logFC)
+write.table(UE.tropho.markers.top20, file = "20210827-figures/files/UE-tropho-markers-top20.csv", sep = ",", quote = F)
+tropho.gene <- c("Tpbpa", "Cdx2", "Eomes", "Rhox6", "Hand1", "Gjb3", "Prl7a1", "Prl4a1")
+pdf("20210827-figures/figure1/Figure1-tropho-marker-featureplot.pdf", width = 20, height = 10)
+FeaturePlot(UE.tropho, features = tropho.gene, pt.size = 0.5, ncol = 4) & 
+  scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+UE.tropho$active.ident <- UE.tropho@active.ident
+pdf("20210827-figures/figure1/Figure1-tropho-marker-vlnplot.pdf", width = 10, height = 10)
+StackedVlnPlot(UE.tropho, features = tropho.gene, cols = tropho.color)
+dev.off()
+
+pdf("20210827-figures/figure1/Figure1-tropho-GO.pdf", width = 30, height = 15)
+ggplot() + 
+  geom_bar(tropho.GO.df.top5, mapping = aes(x = -log10(qvalue), y = GO_Term, fill = cluster), stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = tropho.color[1:6]) +
+  facet_wrap(~ cluster, scales = "free", ncol = 3) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+
+#proportion major cell types
+UE.harmony.pc30.ratio.df <- table(UE.harmony.pc30$time, UE.harmony.pc30@active.ident)
+UE.harmony.pc30.ratio.df <- data.frame(apply(UE.harmony.pc30.ratio.df, 2, function(x) {x/rowSums(UE.harmony.pc30.ratio.df)*100}))
+UE.harmony.pc30.ratio.df$time <- rownames(UE.harmony.pc30.ratio.df)
+UE.harmony.pc30.ratio.df <- melt(UE.harmony.pc30.ratio.df, id.vars = "time")
+UE.harmony.pc30.ratio.df$time <- factor(UE.harmony.pc30.ratio.df$time, 
+                                        levels = c("T55", "T65", "T75", "T85", "T95", "T105"))
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion.pdf", width = 12, height = 9.5)
+ggplot() + 
+  geom_bar(UE.harmony.pc30.ratio.df, mapping = aes(x = time, y = value, fill = variable), stat = "identity", position = "fill") + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = major.color) + 
+  labs(title = "Celltype Proportion in each time")
+dev.off()
+
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion-facet.pdf", width = 12, height = 8)
+ggplot(UE.harmony.pc30.ratio.df, aes(x = time, y = value, group = variable, color = variable)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = major.color) + 
+  facet_wrap(~ variable, scales = "free") + 
+  labs(title = "Celltype Proportion in each time")
+dev.off()
+UE.harmony.pc30.ratio.df.decidual <- UE.harmony.pc30.ratio.df[UE.harmony.pc30.ratio.df$variable == "Decidual", ]
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion-decidual.pdf", width = 5, height = 4)
+ggplot(UE.harmony.pc30.ratio.df.decidual, aes(x = time, y = value, group = variable, color = variable)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  ylim(0, 85) +
+  scale_color_manual(values = major.color)
+dev.off()
+#uEC
+UE.harmony.pc30.ratio.df.EC <- UE.harmony.pc30.ratio.df[UE.harmony.pc30.ratio.df$variable == "EC", ]
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion-EC.pdf", width = 5, height = 4)
+ggplot(UE.harmony.pc30.ratio.df.EC, aes(x = time, y = value, group = variable, color = variable)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  ylim(0, 25) +
+  scale_color_manual(values = major.color[3])
+dev.off()
+#blood.p
+UE.harmony.pc30.ratio.df.blood.p <- UE.harmony.pc30.ratio.df[UE.harmony.pc30.ratio.df$variable == "Blood.P", ]
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion-blood.p.pdf", width = 5, height = 4)
+ggplot(UE.harmony.pc30.ratio.df.blood.p, aes(x = time, y = value, group = variable, color = variable)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  ylim(0, 8) +
+  scale_color_manual(values = major.color[10])
+dev.off()
+#Allantois
+UE.harmony.pc30.ratio.df.Allantois <- UE.harmony.pc30.ratio.df[UE.harmony.pc30.ratio.df$variable == "Allantois.mesodermal", ]
+pdf("20210827-figures/figure1/Figure1-major-cluster-proportion-Allantois.pdf", width = 5, height = 4)
+ggplot(UE.harmony.pc30.ratio.df.Allantois, aes(x = time, y = value, group = variable, color = variable)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  ylim(0, 8) +
+  scale_color_manual(values = major.color[12])
+dev.off()
+
+#violin plot markers
+features <- c("Dcn", "Pgr", "Ptprc", "Pecam1", "Kdr", "Rgs5", "Acta2", "Epcam", "Prap1", "Gjb3", "Rhox6", "Cited4", "Hbb-bh1", "Sox11", "Hmga2", "Dlk1", "Runx1", "Ttr", "Apoa1", "Cdx2", "T", "Lmo2")
+UE.harmony.pc30$active.ident <- UE.harmony.pc30@active.ident
+pdf("20210827-figures/figure1/Figure1-major-cluster-features-vlnplot.pdf", width = 15, height = 25)
+StackedVlnPlot(UE.harmony.pc30, features = features, cols = major.color)
+dev.off()
+#Decidual, Immune, EC, tropho blast gene表达
+subcluster.features <- c("Dcn", "Kdr", "Ptprc", "Rhox6")
+pdf("20210827-figures/figure1/Figure1-major-featureplot.pdf", width = 10, height = 10)
+FeaturePlot(UE.harmony.pc30, features = subcluster.features, pt.size = 0.15, ncol = 2) &
+   scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure1/Figure1-major-featureplot-all.pdf", width = 25, height = 25)
+FeaturePlot(UE.harmony.pc30, features = features, pt.size = 0.15, ncol = 5) &
+   scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+
+pdf("20210827-figures/figure1/Figure1-tdTomato.pdf", width = 10, height = 10)
+FeaturePlot(UE.harmony.pc30, features = "tdTomato", cols = c("lightgray", "darkred"), pt.size = 0.33)
+dev.off()
+#UMAP QC
+pdf("20210827-figures/figure1/Figure1-Phase.pdf", width = 10, height = 9)
+DimPlot(UE.harmony.pc30, group.by = "Phase", pt.size = 0.33)
+dev.off()
+#UMAP time
+time.color <- c(brewer.pal(n = 11, "RdBu"))
+time.color <- time.color[c(2:4, 8:11)]
+pdf("20210827-figures/figure1/Figure1-color-time.pdf", width = 9.5, height = 9)
+DimPlot(UE.harmony.pc30, group.by = "time", pt.size = 0.2) +
+  scale_color_manual(values = time.color) + 
+  labs(title = "UMAP of Time")
+dev.off()
+
+#每个时间点分着画图
+UE.harmony.pc30$cellname <- UE.harmony.pc30@active.ident
+UE.harmony.pc30.umap <- data.frame(Embeddings(UE.harmony.pc30, reduction = "umap"), check.names = F)
+UE.harmony.pc30.umap$cell <- rownames(UE.harmony.pc30.umap)
+UE.harmony.pc30.time <- data.frame(UE.harmony.pc30@meta.data[, c("time", "cellname")], check.names = F)
+UE.harmony.pc30.time$cell <- rownames(UE.harmony.pc30.time)
+UE.harmony.pc30.time <- merge(UE.harmony.pc30.umap, UE.harmony.pc30.time, by = "cell")
+UE.harmony.pc30.time$cellname <- factor(UE.harmony.pc30.time$cellname, levels = major.levels)
+pdf("20210827-figures/figure1/Figure1-major-cluster-time-facet.pdf", width = 22, height = 14)
+ggplot() + 
+  geom_point(UE.harmony.pc30.time, mapping = aes(x = UMAP_1, y = UMAP_2, color = cellname), size = 0.5) + 
+  facet_wrap(~ time) + 
+  scale_color_manual(values = c(major.color)) + 
+  theme_void()
+dev.off()
+
+#Spatial - B6
+load("20210818-spatial/B6-bin50-spatial-phago-map.RData")
+B6.bin50.celltype.score <- GetAssayData(B6.bin50, slot = "data")
+B6.bin50.celltype.max <- apply(B6.bin50.celltype.score, 2, function(x) rownames(B6.bin50.celltype.score)[which.max(x)])
+B6.bin50.celltype.df <- data.frame(cell_type = B6.bin50.celltype.max, 
+                                cell_name = names(B6.bin50.celltype.max), 
+                                GetTissueCoordinates(B6.bin50), 
+                                nFeature_RNA = B6.bin50$nFeature_Spatial, 
+                                nCount_RNA = B6.bin50$nCount_Spatial)
+B6.cell_type.levels <- c(decidual.levels[1:8], immune.levels[c(1:4,7:10)], EC.levels[1:4], major.levels[4:5], major.levels[7:11], tropho.levels[c(1,3:5)])
+B6.bin50.celltype.df$cell_type <- factor(B6.bin50.celltype.df$cell_type, levels = B6.cell_type.levels)
+B6.color <- c(decidual.color[1:8], immune.color[c(1:3,4,7:10)], EC.color[1:4], major.color[c(4,5,7:11)], tropho.color[c(1,3:5)])
+pdf("20210827-figures/figure1/Figure1-B6-bin50-all-types.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = B6.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+#subtype
+B6.bin50.celltype.levels <- B6.cell_type.levels
+plots <- list()
+for (c in seq(1, 31, 1)) {
+  print(B6.bin50.celltype.levels[c])
+  c.df <- B6.bin50.celltype.df[B6.bin50.celltype.df$cell_type==B6.bin50.celltype.levels[c], ]
+  plot <- ggplot() + 
+    geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y), color = "#E7E7E7", size = 0.1) + 
+    geom_point(c.df, mapping = aes(x = -x, y = -y), color = B6.color[c], size = 0.6) + 
+    theme_classic() + 
+    theme(axis.text = element_blank()) +
+    ggtitle(B6.bin50.celltype.levels[c])
+  plots[[c]] <- plot
+}
+pdf("20210827-figures/figure1/Figure1-B6-bin50-subtype.pdf", width = 15, height = 20)
+wrap_plots(plots, ncol = 6)
+dev.off()
+
+#enrichment score
+B6.bin50.celltype.sort <- B6.bin50.celltype.score[, names(sort(B6.bin50.celltype.max))]
+col_anno <- data.frame(cell_type = B6.bin50.celltype.max)
+rownames(col_anno) <- names(B6.bin50.celltype.max)
+col_anno$cell_type <- factor(col_anno$cell_type, levels = B6.cell_type.levels)
+col_anno$cell_name <- rownames(col_anno)
+col_anno.sort <- data.frame()
+for (n in B6.cell_type.levels) {
+  col_anno.sort <- rbind(col_anno.sort, col_anno[col_anno$cell_type==n, ])
+}
+col_anno.df <- data.frame(cell_type = col_anno.sort$cell_type)
+rownames(col_anno.df) <- rownames(col_anno.sort)
+color <- brewer.pal(n =11, name = "RdBu")
+color <- color[c(1:4, 7:11)]
+color = colorRampPalette(rev(color))(100)
+B6.bin50.celltype.sort.s <- B6.bin50.celltype.sort[B6.cell_type.levels, rownames(col_anno.df)]
+pdf("20210827-figures/figure1/Figure1-B6-bin50-seurat-score-heatmap.pdf", width = 20, height = 10)
+pheatmap(B6.bin50.celltype.sort.s, cluster_rows = F, cluster_cols = F, annotation_colors = annotation.color,
+         scale = "column", show_colnames = F, annotation_col = col_anno.df, 
+         color = color)
+dev.off()
+
+#Spatial - C1
+load("20210818-spatial/C1-bin50-spatial-phago-map.RData")
+C1.bin50.celltype.score <- GetAssayData(C1.bin50, slot = "data")
+C1.bin50.celltype.max <- apply(C1.bin50.celltype.score, 2, function(x) rownames(C1.bin50.celltype.score)[which.max(x)])
+C1.bin50.celltype.df <- data.frame(cell_type = C1.bin50.celltype.max, 
+                                cell_name = names(C1.bin50.celltype.max), 
+                                GetTissueCoordinates(C1.bin50), 
+                                nFeature_RNA = C1.bin50$nFeature_Spatial, 
+                                nCount_RNA = C1.bin50$nCount_Spatial)
+C1.cell_type.levels <- c(decidual.levels[1:8], immune.levels[c(1:4,10)], EC.levels[1:4], major.levels[c(4:5,7:13)],tropho.levels[1:5])
+C1.bin50.celltype.df$cell_type <- factor(C1.bin50.celltype.df$cell_type, levels = C1.cell_type.levels)
+C1.color <- c(decidual.color[1:8], immune.color[c(1:4,10)], EC.color[1:4], major.color[c(4,5,7:13)], tropho.color[1:5])
+pdf("20210827-figures/figure1/Figure1-C1-bin50-all-types.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(C1.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = C1.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+#subtype
+C1.bin50.celltype.levels <- C1.cell_type.levels
+plots <- list()
+for (c in seq(1, 31, 1)) {
+  print(C1.bin50.celltype.levels[c])
+  c.df <- C1.bin50.celltype.df[C1.bin50.celltype.df$cell_type==C1.bin50.celltype.levels[c], ]
+  plot <- ggplot() + 
+    geom_point(C1.bin50.celltype.df, mapping = aes(x = -x, y = -y), color = "#CFCFCF", size = 0.1) + 
+    geom_point(c.df, mapping = aes(x = -x, y = -y), color = C1.color[c], size = 0.6) + 
+    theme_classic() + 
+    theme(axis.text = element_blank()) +
+    ggtitle(C1.bin50.celltype.levels[c])
+  plots[[c]] <- plot
+}
+pdf("20210827-figures/figure1/Figure1-C1-bin50-subtype.pdf", width = 15, height = 20)
+wrap_plots(plots, ncol = 6)
+dev.off()
+
+#enrichment score
+C1.bin50.celltype.sort <- C1.bin50.celltype.score[, names(sort(C1.bin50.celltype.max))]
+col_anno <- data.frame(cell_type = C1.bin50.celltype.max)
+rownames(col_anno) <- names(C1.bin50.celltype.max)
+col_anno$cell_type <- factor(col_anno$cell_type, levels = C1.cell_type.levels)
+col_anno$cell_name <- rownames(col_anno)
+col_anno.sort <- data.frame()
+for (n in C1.cell_type.levels) {
+  col_anno.sort <- rbind(col_anno.sort, col_anno[col_anno$cell_type==n, ])
+}
+col_anno.df <- data.frame(cell_type = col_anno.sort$cell_type)
+rownames(col_anno.df) <- rownames(col_anno.sort)
+color <- brewer.pal(n =11, name = "RdBu")
+color <- color[c(1:4, 7:11)]
+color = colorRampPalette(rev(color))(100)
+C1.bin50.celltype.sort <- C1.bin50.celltype.sort
+C1.bin50.celltype.sort.s <- C1.bin50.celltype.sort[C1.cell_type.levels, rownames(col_anno.df)]
+pdf("20210827-figures/figure1/Figure1-C1-bin50-seurat-score-heatmap.pdf", width = 20, height = 10)
+pheatmap(C1.bin50.celltype.sort.s, cluster_rows = F, cluster_cols = F, annotation_colors = annotation.color,
+         scale = "column", show_colnames = F, annotation_col = col_anno.df, 
+         color = color)
+dev.off()
+#Spatial QC
+pdf("20210827-figures/figure1/Figure1-B6-QC.pdf", width = 20, height = 8)
+SpatialFeaturePlot(B6.bin50, features = c("nFeature_Spatial", "nCount_Spatial"))
+dev.off()
+pdf("20210827-figures/figure1/Figure1-C1-QC.pdf", width = 20, height = 8)
+SpatialFeaturePlot(C1.bin50, features = c("nFeature_Spatial", "nCount_Spatial"))
+dev.off()
+
+#featureplot, 各个cluster的marker基因在空间上的表达
+DefaultAssay(B6.bin50) <- "SCT"
+pdf("20210827-figures/figure2/Figure2-B6-bin50-top3-featureplot.pdf", width = 21, height = 24)
+#SpatialFeaturePlot(B6.bin50, features = UE.decidual.markers.top3$gene)
+my_spatial_plot(B6.bin50, features = UE.decidual.markers.top3$gene, ncol = 5)
+dev.off()
+
+DefaultAssay(C1.bin50) <- "SCT"
+pdf("20210827-figures/figure2/Figure2-C1-bin50-top3-featureplot.pdf", width = 21, height = 24)
+#SpatialFeaturePlot(C1.bin50, features = UE.decidual.markers.top3$gene)
+my_spatial_plot(C1.bin50, features = UE.decidual.markers.top3$gene, ncol = 5)
+dev.off()
+```
+
+```{r Figure2}
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+#nCount
+pdf("20210827-figures/figure2/Figure2-0-nCount.pdf", width = 10, height = 9.5)
+FeaturePlot(UE.decidual, features = "nCount_RNA", pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-0-nFeature.pdf", width = 10, height = 9.5)
+FeaturePlot(UE.decidual, features = "nFeature_RNA", pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-")
+UE.decidual <- RenameIdents(UE.decidual, "Postn-D" = "Lum-D")
+UE.decidual <- RenameIdents(UE.decidual, "Ifit1-D" = "S100a8-D")
+UE.decidual <- RenameIdents(UE.decidual, "Hist1h2ap-D" = "Top2a-D")
+UE.decidual <- ScaleData(UE.decidual, features = rownames(UE.decidual))
+UE.decidual@active.ident <- factor(UE.decidual@active.ident, levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Ptn-D", "Gatm-D", "S100a8-D", "Prl8a2-D", "cluster9-1"))
+UE.decidual$cellname <- UE.decidual@active.ident
+
+#Pgr的表达
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+pdf("20210827-figures/figure2/Figure2-10-Pgr-expr.pdf", width = 10, height = 9.5)
+FeaturePlot(UE.decidual, features = "Pgr", pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-0-color-sample.pdf", width = 10, height = 9.5)
+sample.colors <-c(brewer.pal(n = 5, "Dark2"), brewer.pal(n = 5, "Paired"))
+UE.decidual$orig.ident <- factor(UE.decidual$orig.ident, 
+                                 levels = c("U55.E65", "U65", "U.E75", "U85.1", "U85.2", "E85", "U95", "E95", "U105", "E105"))
+DimPlot(UE.decidual, pt.size = 0.5, group.by = "orig.ident", cols = sample.colors[c(1:5, 7:10)])
+dev.off()
+UE.decidual <- subset(UE.decidual, subset = cellname != "cluster9-1")
+UE.decidual@active.ident <- factor(UE.decidual@active.ident, levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Ptn-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+UE.decidual.markers <- FindAllMarkers(UE.decidual, min.pct = 0.5, logfc.threshold = 0.5, only.pos = T)
+write.table(UE.decidual.markers, file = "20210827-figures/files/UE-harmony-decidual-markers.csv", sep = ",", quote = F)
+UE.decidual.markers.top20 <- UE.decidual.markers %>% group_by(cluster) %>% top_n(n = 20, avg_logFC)
+UE.decidual.markers.top3 <- UE.decidual.markers %>% group_by(cluster) %>% top_n(n = 3, avg_logFC)
+write.table(UE.decidual.markers.top20, file = "20210827-figures/files/UE-harmony-decidual-markers-top20.csv", sep = ",", quote = F)
+
+pdf("20210827-figures/figure2/Figure2-1-deciudal-top20-heatmap.pdf", width = 20, height = 15)
+DoHeatmap(UE.decidual, features = UE.decidual.markers.top20$gene, group.colors = decidual.color[1:8]) + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+UE.decidual$active.ident <- UE.decidual@active.ident
+pdf("20210827-figures/figure2/Figure2-8-deciudal-Violineplot-top3.pdf", width = 10, height = 30)
+StackedVlnPlot(UE.decidual, features = c(UE.decidual.markers.top3$gene, "Hand2", "Wnt4", "Rxfp1"), pt.size = 0, cols = decidual.color[1:8])
+dev.off()
+D.selected.gene <- c("Pgr", "Hand2", "Wnt4", "Des", "Lum", "Postn", "Sparcl1", "Col6a3", "Col11a1", "Igfbp5", "Sfrp4", "Rxfp1", "Mmp2", "Hist1h1b", "Top2a", "Ube2c", "Mki67", "Bmp2", "Ptn", "Hmgn5", "Ecm1", "Wnt6", "Wnt5a", "Gatm", "Clu", "Kcnk2", "S100a8", "Angpt2", "Lgals3", "Anxa1", "Prl8a2", "Htra1", "Erv3")
+pdf("20210827-figures/figure2/Figure2-8-deciudal-Violineplot-selected.pdf", width = 10, height = 35)
+StackedVlnPlot(UE.decidual, features = D.selected.gene, pt.size = 0, cols = decidual.color[1:8])
+dev.off()
+#每个decidual top5的基因表达
+UE.decidual.markers.top5 <- UE.decidual.markers %>% group_by(cluster) %>% top_n(n = 10, avg_logFC)
+pdf("20210827-figures/figure2/Figure2-8-deciudal-dotplot-top3.pdf", width = 20, height = 6)
+DotPlot(UE.decidual, features = c(unique(UE.decidual.markers.top5$gene), "H19", "Rhox6", "Rhox9"), cols = "Spectral") + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1))
+dev.off()
+#violin plot
+features <- c("Des", "Prl8a2", "Htra3", "S100a8", "Hand2", "Rhox6", "Rhox9", "Krt8")
+UE.decidual$active.ident <- UE.decidual@active.ident
+pdf("20210827-figures/figure2/Figure2-2-phagocytosis-violin.pdf", width = 10, height = 12)
+StackedVlnPlot(UE.decidual, features = features, pt.size = 0, cols = decidual.color[1:8])
+dev.off()
+#每个时间点分着画图
+UE.decidual.umap <- data.frame(Embeddings(UE.decidual, reduction = "umap"), check.names = F)
+UE.decidual.umap$cell <- rownames(UE.decidual.umap)
+UE.decidual.time <- data.frame(UE.decidual@meta.data[, c("time", "cellname")], check.names = F)
+UE.decidual.time$cell <- rownames(UE.decidual.time)
+UE.decidual.time <- merge(UE.decidual.umap, UE.decidual.time, by = "cell")
+UE.decidual.time$cellname <- factor(UE.decidual.time$cellname, levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Ptn-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/Figure2-1-deciudal-time-facet.pdf", width = 15, height = 10)
+ggplot() + 
+  geom_point(UE.decidual.time, mapping = aes(x = UMAP_1, y = UMAP_2, color = cellname), size = 0.5) + 
+  facet_wrap(~ time) + 
+  scale_color_manual(values = c(decidual.color[1:7])) + 
+  theme_void()
+dev.off()
+#proportion area plot
+UE.decidual <- subset(UE.decidual, subset = cellname != "cluster9-1")
+UE.decidual.pro <- data.frame(table(UE.decidual$time, UE.decidual$active.ident), check.names = F)
+UE.decidual.pro <- UE.decidual.pro[UE.decidual.pro$Var2 != "cluster9-1", ]
+UE.decidual.pro$Var3 <- 0
+UE.decidual.pro[UE.decidual.pro$Var1 == "T65", ]$Var3 <- 1
+UE.decidual.pro[UE.decidual.pro$Var1 == "T75", ]$Var3 <- 2
+UE.decidual.pro[UE.decidual.pro$Var1 == "T85", ]$Var3 <- 3
+UE.decidual.pro[UE.decidual.pro$Var1 == "T95", ]$Var3 <- 4
+UE.decidual.pro[UE.decidual.pro$Var1 == "T105", ]$Var3 <- 5
+pdf("20210827-figures/figure2/Figure2-1-deciudal-proportion.pdf", width = 10, height = 10)
+ggplot() + 
+  geom_area(UE.decidual.pro, mapping = aes(x = Var3, y = Freq, fill = Var2), stat = "identity", position = "fill") + 
+  scale_fill_manual(values = decidual.color[1:7]) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  labs(title = "Decidual cells proportion")
+dev.off()
+#B6/C1 decidual region
+decidual.spatial.color <- c(decidual.color[1:7], rep("#E7E7E7", 24))
+pdf("20210827-figures/figure2/Figure2-C1-bin50-decidual.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(C1.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = decidual.spatial.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+pdf("20210827-figures/figure2/Figure2-B6-bin50-decidual.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = decidual.spatial.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+
+#decidual GO
+library("clusterProfiler")
+decidual.GO.df <- data.frame()
+for (c in unique(UE.decidual.markers$cluster)) {
+  print(c)
+  geneset <- UE.decidual.markers[UE.decidual.markers$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    GeneRation = enrich.GO$GeneRatio, 
+                    gene = enrich.GO$geneID)
+  decidual.GO.df <- rbind(decidual.GO.df, tmp)
+}
+decidual.GO.df$GO_Term <- factor(decidual.GO.df$GO_Term, levels = rev(unique(decidual.GO.df$GO_Term)))
+decidual.GO.df$cluster <- factor(decidual.GO.df$cluster, 
+                                 levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Ptn-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+write.table(decidual.GO.df, file = "20210827-figures/files/UE-harmony-decidual-GO.csv", sep = "\t", quote = F)
+write.table(decidual.GO.df, file = "20210827-figures/files/UE-harmony-decidual-GO-20220910.csv", sep = "\t", quote = F)
+
+decidual.GO.df.top5 <- decidual.GO.df[c(1:5, 501:505, 1044:1048, 1297:1301, 1663:1667, 1732:1736, 2274, 2277, 2287, 2288, 2312), ]
+
+pdf("20210827-figures/figure2/Figure2-3-deciudal-GO.pdf", width = 30, height = 22)
+ggplot() + 
+  geom_bar(decidual.GO.df.top5, mapping = aes(x = -log10(qvalue), y = GO_Term, fill = cluster), stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = decidual.color[1:7]) +
+  facet_wrap(~ cluster, scales = "free", ncol = 3) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+#各个cluster的差异TF
+regulonAUC.value.avg.filter <- read.table("../20210201-integrate/UE-decidual-cluster-significant-TF.csv", sep = ",", header = T, check.names = F)
+pdf("20210827-figures/figure2/Figure2-4-deciudal-cluster-TF.pdf", width = 10, height = 10)
+pheatmap(regulonAUC.value.avg.filter, scale = "row", cluster_cols = F, cluster_rows = T, 
+         color = rev(colorRampPalette(color)(100)))
+dev.off()
+#clustering
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual$cellname <- gsub("Postn-D", "Lum-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Ifit1-D", "S100a8-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.decidual$cellname)
+UE.decidual@active.ident <- factor(UE.decidual$cellname)
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-" & cellname != "cluster9-1")
+UE.decidual <- BuildClusterTree(UE.decidual)
+Tool(UE.decidual, slot = "BuildClusterTree")
+PlotClusterTree(UE.decidual)
+UE.decidual.avg <- AverageExpression(UE.decidual)
+UE.decidual.avg <- UE.decidual.avg$RNA
+write.table(UE.decidual.avg, file = "20210827-figures/files/UE-decidual-cluster-average-expression-20220526.csv", sep = ",", quote = F)
+pdf("20210827-figures/figure2/Figure2-5-decidual-clustering.pdf", width = 10, height = 10)
+plclust(hclust(d = dist(x =1-cor(UE.decidual.avg))))
+dev.off()
+library("scrattch")
+library("scrattch.vis")
+library("scrattch.hicat")
+UE.decidual <- subset(UE.decidual, subset = cellcluster != 7)
+UE.decidual$cellcluster <- gsub(5, 4, UE.decidual$cellcluster)
+UE.decidual$cellcluster <- gsub(9, 8, UE.decidual$cellcluster)
+UE.decidual$cellcluster <- gsub(11, 1, UE.decidual$cellcluster)
+UE.decidual$cellcluster <- gsub("cluster8-0", "12", UE.decidual$cellcluster)
+UE.decidual$cellcluster <- gsub("cluster8-1", "13", UE.decidual$cellcluster)
+UE.decidual$cellcluster <- factor(UE.decidual$cellcluster)
+rd.dat <- UE.decidual@reductions$harmony@cell.embeddings
+cl <- UE.decidual$cellcluster
+cl.df <- data.frame(cluster_label = levels(cl))
+rownames(cl.df) <- cl.df$cluster_label
+knn.test <- get_knn_graph(rd.dat =rd.dat, cl=cl, cl.df=cl.df)
+clade_id <- levels(cl)
+names(clade_id) <- levels(UE.decidual$cellcluster)
+clade.color <- decidual.color[c(6,7,8,5,2,3,4,1)]
+names(clade.color) <- clade_id
+cl.center <- list()
+cl.emb <- data.frame(Embeddings(UE.decidual, reduction = "umap"), cellcluster = UE.decidual$cellcluster)
+
+for (i in levels(UE.decidual$cellcluster)) {
+  tmpCells <- names(UE.decidual$cellcluster)[UE.decidual$cellcluster == i]
+  tmpUmap <- UE.decidual@reductions$umap@cell.embeddings[tmpCells, ]
+  tmpUmap_mean <- colMeans(tmpUmap)
+  cl.center[[i]] <- c(i, tmpUmap_mean, i, clade.color[i], i, table(cl)[i], clade_id[i], clade.color[clade_id[i]])
+}
+cl.center.df <- do.call(rbind, cl.center)
+colnames(cl.center.df) <- c("cl", "x", "y", "cluster_id", "cluster_color", "cluster_label", "cluster_size", "clade_id", "clade_color")
+cl.center.df <- as.data.frame(cl.center.df)
+cl.center.df$x <- as.numeric(cl.center.df$x)
+cl.center.df$y <- as.numeric(cl.center.df$y)
+cl.center.df$cluster_size <- as.numeric(cl.center.df$cluster_size)
+out.dir <- "20210827-figures/figure2/test"
+plot_constellation(knn.test$knn.cl.df, cl.center.df, out.dir, max_size = 50, exxageration = 0.5, plot.hull = cl.center.df$clade_id)
+
+#color time
+pdf("20210827-figures/figure2/Figure2-6-UMAP-color-time.pdf", width = 9.5, height = 9)
+DimPlot(UE.decidual, group.by = "time", pt.size = 1) +
+  scale_color_manual(values = time.color) + 
+  labs(title = "UMAP of Time")
+dev.off()
+#每个decidual cluster的transcripts的boxplot
+UE.decidual.nFeature.count <- data.frame(gene_count = UE.decidual$nCount_RNA, 
+                                         cell = names(UE.decidual$nFeature_RNA), 
+                                         cluster = UE.decidual$cellname)
+ggplot() + 
+  geom_boxplot(UE.decidual.nFeature.count, mapping = aes(x = cluster, y = gene_count, fill = cluster), pt.size = 0)
+
+#空间上各个decidual细胞的nFeature， nCount
+#B6
+B6.bin50.celltype.decidual.df <- B6.bin50.celltype.df[B6.bin50.celltype.df$cell_type %in% c("S100a8-D", "Gatm-D", "Prl8a2-D", "Top2a-D", "Sfrp4-D", "Lum-D"), ]
+decidual.color <- c("#6A5ACD","#9ACD32","#FB8072","#8DD3C7","#08519C","#FDB462","#228B22","#FCCDE5","#D9D9D9")
+
+B6.bin50.celltype.decidual.df$cell_type <- factor(B6.bin50.celltype.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/Figure2-7-B6-genes-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(B6.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+pdf("20210827-figures/figure2/Figure2-7-B6-count-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(B6.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#count/gene
+pdf("20210827-figures/figure2/Figure2-7-B6-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(B6.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#C1
+C1.bin50.celltype.decidual.df <- C1.bin50.celltype.df[C1.bin50.celltype.df$cell_type %in% c("S100a8-D", "Gatm-D", "Prl8a2-D", "Top2a-D", "Sfrp4-D", "Lum-D"), ]
+decidual.color <- c("#6A5ACD","#9ACD32","#FB8072","#8DD3C7","#08519C","#FDB462","#228B22","#FCCDE5","#D9D9D9")
+
+C1.bin50.celltype.decidual.df$cell_type <- factor(C1.bin50.celltype.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/Figure2-7-C1-genes-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(C1.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+pdf("20210827-figures/figure2/Figure2-7-C1-count-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(C1.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+pdf("20210827-figures/figure2/Figure2-7-C1-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(C1.bin50.celltype.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#其他群比eSF群高表达的基因
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual.Lum <- UE.decidual
+UE.decidual.Lum$cellname <- gsub("Postn-D", "Lum-D", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Sfrp4-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Top2a-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Hist1h2ap-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Gatm-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Ptn-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Ifit1-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("S100a8-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum$cellname <- gsub("Prl8a2-D", "Decidualization", UE.decidual.Lum$cellname)
+UE.decidual.Lum@active.ident <- factor(UE.decidual.Lum$cellname)
+UE.decidual.Lum <- subset(UE.decidual.Lum, subset = cellname != "Prg-" & cellname != "cluster9-1")
+UE.decidual.Lum.markers <- FindAllMarkers(UE.decidual.Lum, only.pos = T, min.pct = 0.5, logfc.threshold = 0.5)
+```
+
+```{r}
+#基因的点亮图，UMAP和spatial上的B6、C1
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-" & cellname != "cluster9-1")
+genes <- c("Hand2","Rxfp1","Rprm","Rhox9","Wnt4", "Top2a")
+pdf("20210827-figures/figure2/Figure2-9-UMAP-featureplot.pdf", width = 15, height = 10)
+FeaturePlot(UE.decidual, features = genes, ncol = 3, pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+
+pdf("20210827-figures/figure2/Figure2-B6-bin50-IF-featureplot.pdf", width = 15, height = 10)
+my_spatial_plot(B6.bin50, features = genes, pt.size = 0.6, ncol = 3)
+dev.off()
+pdf("20210827-figures/figure2/Figure2-C1-bin50-IF-featureplot.pdf", width = 15, height = 10)#一个是6*5
+my_spatial_plot(C1.bin50, features = genes, pt.size = 0.6, ncol = 3)
+dev.off()
+
+#文献中提到的有做用的一些基因的点亮图
+literature.genes <- c("Mmp2", "Col1a1", "Col1a2", "Dcn", "Des")
+pdf("20210827-figures/figure2/Figure2-14-UMAP-literature-gene-featureplot.pdf", width = 10, height = 15)
+FeaturePlot(UE.decidual, features = literature.genes, ncol = 2, pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-B6-literature-gene-featureplot.pdf", width = 10, height = 15)
+my_spatial_plot(B6.bin50, features = literature.genes, pt.size = 0.5, ncol = 2)
+dev.off()
+
+#matrisomeDB中有变化的ECM
+#Collagen
+collagen.c <- c("Col11a1", "Col12a1", "Col14a1", "Col15a1", "Col16a1", "Col18a1", "Col1a1", "Col1a2", "Col3a1", "Col4a1", 
+                "Col4a2", "Col5a1", "Col5a2", "Col6a1", "Col6a2")
+pdf("20210827-figures/figure2/Figure2-14-UMAP-collagen-c-gene-featureplot.pdf", width = 20, height = 20)
+FeaturePlot(UE.decidual, features = collagen.c, ncol = 4, pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-B6-collagen-c-gene-featureplot.pdf", width = 20, height = 20)
+my_spatial_plot(B6.bin50, features = collagen.c, pt.size = 0.5, ncol = 4)
+dev.off()
+#Glycoprotein
+Glyco.c <- c("Aebp1", "Crispld2", "Cyr61", "Dpt", "Ecm1", "Efemp2", "Eln", "Emilin1", "Emilin2", "Fbln1", "Fbln2", "Fbn1", 
+             "Fbln5", "Fn1", "Igfbp4", "Igfbp5", "Igfbp6", "Igfbp7", "Lama2", "Lama4", "Lama5", "Lamb1", "Lamb2", "Lamc1", 
+             "Ltbp1", "Ltbp4", "Ltbp3", "Matn2", "Mfap2", "Mfap4", "Mfap5", "Mfge8", "Mgp", "Nid1", "Pcolce", "Postn", 
+             "Rspo3", "Slit3", "Sned1", "Sparc", "Sparcl1", "Spon1", "Srpx", "Svep1", "Thbs3", "Tinagl1", "Tnfaip6")
+pdf("20210827-figures/figure2/Figure2-14-UMAP-Glyco-c-gene-featureplot.pdf", width = 35, height = 35)
+FeaturePlot(UE.decidual, features = Glyco.c, ncol = 7, pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-B6-Glyco-c-gene-featureplot.pdf", width = 35, height = 35)
+my_spatial_plot(B6.bin50, features = Glyco.c, pt.size = 0.5, ncol = 7)
+dev.off()
+#Proteoglycan
+Proteo.c <- c("Bgn", "Dcn", "Hspg2", "Lum", "Ogn", "Prelp", "Srgn", "Vcan")
+pdf("20210827-figures/figure2/Figure2-14-UMAP-Proteo-c-gene-featureplot.pdf", width = 15, height = 15)
+FeaturePlot(UE.decidual, features = Proteo.c, ncol = 3, pt.size = 0.5) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-B6-Proteo-c-gene-featureplot.pdf", width = 15, height = 15)
+my_spatial_plot(B6.bin50, features = Proteo.c, pt.size = 0.5, ncol = 3)
+dev.off()
+```
+
+
+```{r Figure3}
+load("20210821-decidual-pseudotime/Decidual-gene-time-monocle2.RData")
+state.color <- c("#00CED1", "#2E8B57", "#FF8C00", "#F08080", "#6A5ACD")
+pdf("20210827-figures/figure3/Figure3-1-5stage.pdf", width = 8, height = 5)
+plot_cell_trajectory(decidual.cds, color_by = "State", show_state_number = F, cell_size = 0.5, show_branch_points = F) + 
+  scale_color_manual(values = state.color)
+dev.off()
+state <- decidual.cds$State
+names(state) <- colnames(decidual.cds)
+UE.decidual.monocle <- subset(UE.decidual, subset = cellname != "cluster9-1" & cellname != "Lum-D")
+DimPlot(UE.decidual.monocle)
+UE.decidual.monocle <- AddMetaData(UE.decidual.monocle, metadata = state, col.name = "state")
+UE.decidual.monocle@active.ident <- UE.decidual.monocle$state
+UE.decidual.monocle.markers <- FindAllMarkers(UE.decidual.monocle, min.pct = 0.7, logfc.threshold = 0.25, only.pos = T)
+#不同stage的GO结果
+decidual.state.GO.df <- data.frame()
+for (c in levels(UE.decidual.monocle.markers$cluster)) {
+  print(c)
+  geneset <- UE.decidual.monocle.markers[UE.decidual.monocle.markers$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  enrich.GO <- enrich.GO[1:5, ]
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  decidual.state.GO.df <- rbind(decidual.state.GO.df, tmp)
+}
+decidual.state.GO.df$GO_Term <- factor(decidual.state.GO.df$GO_Term, levels = rev(unique(decidual.state.GO.df$GO_Term)))
+pdf("20210827-figures/figure3/Figure3-5-stage-DEGs-GO.pdf", width = 10, height = 12)
+ggplot() + 
+  geom_point(decidual.state.GO.df, mapping = aes(x = cluster, y = GO_Term, color = cluster, size = -log10(qvalue))) + 
+  scale_size(range = c(5, 12)) + 
+  scale_color_manual(values = state.color) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+UE.decidual.monocle.markers.top20 <- UE.decidual.monocle.markers %>% group_by(cluster) %>% top_n(n = 20, avg_logFC)
+pdf("20210827-figures/figure3/Figure3-2-stage-DEGs-heatmap.pdf", width = 10, height = 20)
+DoHeatmap(UE.decidual.monocle, features = UE.decidual.monocle.markers.top20$gene, group.colors = state.color)  + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+#time state proportion
+decidual.state.time <- data.frame(table(UE.decidual.monocle$state, UE.decidual.monocle$time), check.names = F)
+pdf("20210827-figures/figure3/Figure3-3-stage-time-braplot.pdf", width = 10, height = 10)
+ggplot() +
+  geom_bar(decidual.state.time, mapping = aes(x = Var2, y = Freq, fill = Var1), stat = "identity", position = "fill") + 
+  scale_fill_manual(values = state.color) +
+  theme_classic()
+dev.off()
+#cellname state proportion
+decidual.state.cellname <- data.frame(table(UE.decidual.monocle$state, UE.decidual.monocle$cellname), check.names = F)
+decidual.state.cellname <- decidual.state.cellname[!decidual.state.cellname$Var2 %in% c("Lum-D", "cluster9-1"), ]
+pdf("20210827-figures/figure3/Figure3-3-stage-cellname-braplot.pdf", width = 10, height = 10)
+ggplot() +
+  geom_bar(decidual.state.cellname, mapping = aes(x = Var2, y = Freq, fill = Var1), stat = "identity", position = "fill") + 
+  scale_fill_manual(values = state.color) +
+  theme_classic()
+dev.off()
+#GO 的score
+apoptosis <- read.table("20201203/03.decidual/GO-term-score/Apoptosis-GO-0006915.csv", sep = ",", header = T)
+decidual <- read.table("20201203/03.decidual/GO-term-score/Decidualization-mouse-GO-0046697.csv", sep = ",", header = T)
+mitochondion <- read.table("20201203/03.decidual/GO-term-score/mitochondrion-GO-0005739.csv", sep = ",", header = T)
+ECM <- read.table("20201203/03.decidual/ECM-mouse-GO-0031012.csv", sep = ",", check.names = F)
+decreased.oxygene <- read.table("20201203/03.decidual/GO-term-score/Decreased-oxygene-levels-GO-0036294.csv", sep = ",", header = T)
+inflammatory <- read.table("20201203/03.decidual/GO-term-score/Inflammatory-response-GO-0006954.csv", sep = ",", header = T)
+
+decidual.score.data <- data.frame(UE.decidual.monocle@assays$RNA@data)
+decidual.score.data.apoptosis <- decidual.score.data[rownames(decidual.score.data) %in% apoptosis$Symbol, ]
+decidual.score.data.decidual <- decidual.score.data[rownames(decidual.score.data) %in% decidual$Symbol, ]
+decidual.score.data.mitochondion <- decidual.score.data[rownames(decidual.score.data) %in% mitochondion$Symbol, ]
+decidual.score.data.ECM <- decidual.score.data[rownames(decidual.score.data) %in% ECM$V1, ]
+decidual.score.data.decreased.oxygene <- decidual.score.data[rownames(decidual.score.data) %in% decreased.oxygene$Symbol, ]
+decidual.score.data.inflammatory <- decidual.score.data[rownames(decidual.score.data) %in% inflammatory$Symbol, ]
+
+decidual.score <- data.frame(cell = colnames(UE.decidual.monocle), 
+                             apoptosis = apply(decidual.score.data.apoptosis, 2, mean),  
+                             decidual = apply(decidual.score.data.decidual, 2, mean), 
+                             mitochondion = apply(decidual.score.data.mitochondion, 2, mean), 
+                             ECM = apply(decidual.score.data.ECM, 2, mean), 
+                             oxygene = apply(decidual.score.data.decreased.oxygene, 2, mean), 
+                             inflammatory = apply(decidual.score.data.inflammatory, 2, mean))
+decidual.state <- data.frame(cell = colnames(UE.decidual.monocle), 
+                             state = UE.decidual.monocle$state)
+decidual.score.state <- merge(decidual.state, decidual.score, by = "cell", all = F)
+apoptosis.score <- ggplot(decidual.score.state, aes(x = state, y = apoptosis, color = state)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "Apoptosis score (GO:0006915) of State")
+decidual.score <- ggplot(decidual.score.state, aes(x = state, y = decidual, color = state)) + 
+  geom_violin(scale = "width", width =0.8) + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "Decidual score (GO:0046697) of State")
+ECM.score <- ggplot(decidual.score.state, aes(x = state, y = ECM, color = state)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "ECM score (GO:0031012) of State")
+mitochondion.score <- ggplot(decidual.score.state, aes(x = state, y = mitochondion, color = state)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "Mitochondrion score (GO:0005739) of State")
+oxygene.score <- ggplot(decidual.score.state, aes(x = state, y = oxygene, color = state)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "Decreased oxygene score (GO:0036294) of State")
+inflammatory.score <- ggplot(decidual.score.state, mapping = aes(x = state, y = inflammatory, color = state)) + 
+  geom_violin(scale = "width", width = 0.8)  + 
+  geom_boxplot(width=0.3, alpha=0.2, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_color_manual(values = state.color) +
+  labs(title = "Inflammatory response score (GO:0006954) of State")
+pdf("20210827-figures/figure3/Figure3-4-stage-GO-score.pdf", width = 10, height = 10)
+cowplot::plot_grid(apoptosis.score, decidual.score, ECM.score, 
+                   mitochondion.score, oxygene.score, inflammatory.score, ncol = 2)
+dev.off()
+
+```
+
+#讨论的第一个zone
+```{r}
+#1) 做eSF,pre-decidual,AM-DSC1的两两比较
+#eSF和pre-decidual
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-")
+UE.decidual <- RenameIdents(UE.decidual, "Postn-D" = "Lum-D")
+UE.decidual <- RenameIdents(UE.decidual, "Ifit1-D" = "S100a8-D")
+UE.decidual <- RenameIdents(UE.decidual, "Hist1h2ap-D" = "Top2a-D")
+UE.decidual.avg <- AverageExpression(UE.decidual)
+UE.decidual.avg.RNA <- UE.decidual.avg$RNA
+UE.decidual.avg.RNA$gene <- rownames(UE.decidual.avg.RNA)
+Sfrp4.markers <- FindMarkers(UE.decidual, ident.1 = "Sfrp4-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Sfrp4.markers$gene <- rownames(Sfrp4.markers)
+Sfrp4.markers <- merge(UE.decidual.avg.RNA, Sfrp4.markers, by = "gene", all = F)
+Sfrp4.markers$color <- 1
+Sfrp4.markers[Sfrp4.markers$avg_logFC<0, ]$color <- -1
+Sfrp4.markers$color <- factor(Sfrp4.markers$color, levels = c(1, -1))
+#Sfrp4和Lum作比较
+pdf("20210827-figures/figure2/Figure2-10-Sfrp4-Lum-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Sfrp4-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Sfrp4.markers, mapping = aes(x = log2(`Sfrp4-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Sfrp4.markers$`Sfrp4-D` + 1), y = log2(Sfrp4.markers$`Lum-D` + 1), label = Sfrp4.markers$gene) + 
+  scale_color_manual(values = c("#9ACD32", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#Gatm和Lum作比较
+Gatm.markers <- FindMarkers(UE.decidual, ident.1 = "Gatm-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Gatm.markers$gene <- rownames(Gatm.markers)
+Gatm.markers <- merge(UE.decidual.avg.RNA, Gatm.markers, by = "gene", all = F)
+Gatm.markers$color <- 1
+Gatm.markers[Gatm.markers$avg_logFC<0, ]$color <- -1
+Gatm.markers$color <- factor(Gatm.markers$color, levels = c(1, -1))
+Gatm.add.gene <- c("Clu", "Kcnk2")
+
+pdf("20210827-figures/figure2/Figure2-10-Gatm-Lum-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Gatm-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Gatm.markers, mapping = aes(x = log2(`Gatm-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Gatm.markers$`Gatm-D` + 1), y = log2(Gatm.markers$`Lum-D` + 1), label = Gatm.markers$gene) + 
+  scale_color_manual(values = c("#08519C", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#Top2a和Lum作比较
+Top2a.markers <- FindMarkers(UE.decidual, ident.1 = "Top2a-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Top2a.markers$gene <- rownames(Top2a.markers)
+Top2a.markers <- merge(UE.decidual.avg.RNA, Top2a.markers, by = "gene", all = F)
+Top2a.markers$color <- 1
+Top2a.markers[Top2a.markers$avg_logFC<0, ]$color <- -1
+Top2a.markers$color <- factor(Top2a.markers$color, levels = c(1, -1))
+pdf("20210827-figures/figure2/Figure2-10-Top2a-Lum-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Top2a-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Top2a.markers, mapping = aes(x = log2(`Top2a-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Top2a.markers$`Top2a-D` + 1), y = log2(Top2a.markers$`Lum-D` + 1), label = Top2a.markers$gene) + 
+  scale_color_manual(values = c("#FB8072", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#Ptn和Lum作比较
+Ptn.markers <- FindMarkers(UE.decidual, ident.1 = "Ptn-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Ptn.markers$gene <- rownames(Ptn.markers)
+Ptn.markers <- merge(UE.decidual.avg.RNA, Ptn.markers, by = "gene", all = F)
+Ptn.markers$color <- 1
+Ptn.markers[Ptn.markers$avg_logFC<0, ]$color <- -1
+Ptn.markers$color <- factor(Ptn.markers$color, levels = c(1, -1))
+pdf("20210827-figures/figure2/Figure2-10-Ptn-Lum-scatter-nolabel.pdf", width = 6, height = 6)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Ptn-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1) +
+  geom_point(Ptn.markers, mapping = aes(x = log2(`Ptn-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.2) + 
+  annotate("text", x = log2(Ptn.markers$`Ptn-D` + 1), y = log2(Ptn.markers$`Lum-D` + 1), label = Ptn.markers$gene) + 
+  scale_color_manual(values = c("#8DD3C7", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#S100a8和Lum作比较
+S100a8.markers <- FindMarkers(UE.decidual, ident.1 = "S100a8-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+S100a8.markers$gene <- rownames(S100a8.markers)
+S100a8.markers <- merge(UE.decidual.avg.RNA, S100a8.markers, by = "gene", all = F)
+S100a8.markers$color <- 1
+S100a8.markers[S100a8.markers$avg_logFC<0, ]$color <- -1
+S100a8.markers$color <- factor(S100a8.markers$color, levels = c(1, -1))
+#S100a8.markers <- S100a8.markers[S100a8.markers$gene %in% c("Angpt2"), ]
+pdf("20210827-figures/figure2/Figure2-10-S100a8-Lum-scatter-nolabel.pdf", width = 6, height = 6)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`S100a8-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(S100a8.markers, mapping = aes(x = log2(`S100a8-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(S100a8.markers$`S100a8-D` + 1), y = log2(S100a8.markers$`Lum-D` + 1), label = S100a8.markers$gene) + 
+  scale_color_manual(values = c("#FDB462", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#Prl8a2和Lum作比较
+Prl8a2.markers <- FindMarkers(UE.decidual, ident.1 = "Prl8a2-D", ident.2 = "Lum-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Prl8a2.markers$gene <- rownames(Prl8a2.markers)
+Prl8a2.markers <- merge(UE.decidual.avg.RNA, Prl8a2.markers, by = "gene", all = F)
+Prl8a2.markers$color <- 1
+Prl8a2.markers[Prl8a2.markers$avg_logFC<0, ]$color <- -1
+Prl8a2.markers$color <- factor(Prl8a2.markers$color, levels = c(1, -1))
+pdf("20210827-figures/figure2/Figure2-10-Prl8a2-Lum-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Prl8a2-D`+1), y = log2(`Lum-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Prl8a2.markers, mapping = aes(x = log2(`Prl8a2-D`+1), y = log2(`Lum-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Prl8a2.markers$`Prl8a2-D` + 1), y = log2(Prl8a2.markers$`Lum-D` + 1), label = Prl8a2.markers$gene) + 
+  scale_color_manual(values = c("#228B22", "#6A5ACD")) + 
+  theme_classic()
+dev.off()
+#Prl8a2和Gatm作比较
+Gatm.Prl8a2.markers <- FindMarkers(UE.decidual, ident.1 = "Gatm-D", ident.2 = "Prl8a2-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Gatm.Prl8a2.markers$gene <- rownames(Gatm.Prl8a2.markers)
+Gatm.Prl8a2.markers <- merge(UE.decidual.avg.RNA, Gatm.Prl8a2.markers, by = "gene", all = F)
+Gatm.Prl8a2.markers$color <- 1
+Gatm.Prl8a2.markers[Gatm.Prl8a2.markers$avg_logFC<0, ]$color <- -1
+Gatm.Prl8a2.markers$color <- factor(Gatm.Prl8a2.markers$color, levels = c(1, -1))
+pdf("20210827-figures/figure2/Figure2-10-Gatm-Prl8a2-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Gatm-D`+1), y = log2(`Prl8a2-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Gatm.Prl8a2.markers, mapping = aes(x = log2(`Gatm-D`+1), y = log2(`Prl8a2-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Gatm.Prl8a2.markers$`Gatm-D` + 1), y = log2(Gatm.Prl8a2.markers$`Prl8a2-D` + 1), label = Gatm.Prl8a2.markers$gene) + 
+  scale_color_manual(values = c("#08519C", "#228B22")) + 
+  theme_classic()
+dev.off()
+#Gatm和Sfrp4作比较
+Sfrp4.Gatm.markers <- FindMarkers(UE.decidual, ident.1 = "Sfrp4-D", ident.2 = "Gatm-D", only.pos = F, logfc.threshold = 1, min.pct = 0.5)
+Sfrp4.Gatm.markers$gene <- rownames(Sfrp4.Gatm.markers)
+Sfrp4.Gatm.markers <- merge(UE.decidual.avg.RNA, Sfrp4.Gatm.markers, by = "gene", all = F)
+Sfrp4.Gatm.markers$color <- 1
+Sfrp4.Gatm.markers[Sfrp4.Gatm.markers$avg_logFC<0, ]$color <- -1
+Sfrp4.Gatm.markers$color <- factor(Sfrp4.Gatm.markers$color, levels = c(1, -1))
+pdf("20210827-figures/figure2/Figure2-10-Sfrp4-Gatm-scatter-nolabel.pdf", width = 6, height = 5)
+ggplot() + 
+  geom_point(UE.decidual.avg.RNA, mapping = aes(x = log2(`Sfrp4-D`+1), y = log2(`Gatm-D`+1)), color = "lightgray", size = 1.3) +
+  geom_point(Sfrp4.Gatm.markers, mapping = aes(x = log2(`Sfrp4-D`+1), y = log2(`Gatm-D`+1), color = color), size = 1.6) + 
+  annotate("text", x = log2(Sfrp4.Gatm.markers$`Sfrp4-D` + 1), y = log2(Sfrp4.Gatm.markers$`Gatm-D` + 1), label = Sfrp4.Gatm.markers$gene) + 
+  scale_color_manual(values = c("#9ACD32", "#08519C")) + 
+  theme_classic()
+dev.off()
+#画出B6/C1的zone1结构
+decidual.spatial.color <- c("#6A5ACD", "#9ACD32", rep("#E7E7E7", 2), "#08519C", "#E7E7E7", "#228B22", rep("#E7E7E7", 12), "#6B8E23", rep("#E7E7E7", 11))
+pdf("20210827-figures/figure2/Figure2-B6-bin50-zone1.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(B6.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = decidual.spatial.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+
+decidual.spatial.color <- c("#6A5ACD", "#9ACD32", rep("#E7E7E7", 2), "#08519C", "#E7E7E7", "#228B22", rep("#E7E7E7", 11), "#6B8E23", rep("#E7E7E7", 12))
+pdf("20210827-figures/figure2/Figure2-C1-bin50-zone1.pdf", width = 10, height = 9)
+ggplot() + 
+  geom_point(C1.bin50.celltype.df, mapping = aes(x = -x, y = -y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = decidual.spatial.color) + 
+  theme_classic() + 
+  theme(axis.text = element_blank())
+dev.off()
+
+#Cellchat
+load("../20210201-integrate/UE-harmony-cellchat-subname-results-20210903.RData")
+df.net <- subsetCommunication(UE.harmony.cellchat, slot.name = 'netP')
+df.net$paires_cell <- paste(df.net$source, df.net$target, sep = '_')
+zone1.inter <- c("SMC_Lum-D", "Lum-D_SMC", "Lum-D_Sfrp4-D", "Sfrp4-D_Lum-D", "Sfrp4-D_Gatm-D", "Gatm-D_Sfrp4-D")
+df.net.zone1 <- df.net[df.net$paires_cell %in% c("SMC_Lum-D", "Lum-D_SMC", "Lum-D_Sfrp4-D", "Sfrp4-D_Lum-D", "Sfrp4-D_Gatm-D", "Gatm-D_Sfrp4-D"), ]
+df.net.zone1$paires_cell <- factor(df.net.zone1$paires_cell, levels = zone1.inter)
+df.net.zone1.top5$order <- paste(df.net.zone1.top5$source, df.net.zone1.top5$target, sep = ' ')
+df.net.zone1.top5 <- df.net.zone1 %>% group_by(paires_cell) %>% top_n(n = 5, prob)
+pdf("20210827-figures/figure2/Figure2-11-zone1-pathway-all.pdf", width = 5, height = 7)
+ggplot() + 
+  geom_point(df.net.zone1, mapping = aes(x = paires_cell, y = pathway_name, color = prob, size = -pval)) +
+  scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  theme_bw()
+dev.off()
+pdf("20210827-figures/figure2/Figure2-11-zone1-pathway-top5.pdf", width = 4.5, height = 4)
+ggplot() + 
+  geom_point(df.net.zone1.top5, mapping = aes(x = paires_cell, y = pathway_name, color = prob, size = -pval)) +
+  scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  theme_bw()
+dev.off()
+
+#merge Lum-D, Sfrp4-D, Gatm-D, S100a8-D, Top2a-D, Prl8a2-D
+MET.merge <- function(){
+UE.MET.avg <- UE.decidual.avg$RNA[, c(3, 4, 1, 5, 2, 7)]
+UE.MET.avg <- UE.MET.avg*100
+UE.MET.avg.fc <- UE.MET.avg[, 2:6]/(UE.MET.avg[, 1] + 1)
+UE.MET.avg.up <- UE.MET.avg[apply(UE.MET.avg.fc, 1, max)>2, ]
+UE.MET.avg.down <- UE.MET.avg[apply(UE.MET.avg.fc, 1, min)>0.5, ]
+UE.MET <- subset(UE.decidual, subset = cellname %in% c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "S100a8-D", "Top2a-D"))
+UE.MET.markers <- FindAllMarkers(UE.MET, min.pct = 0.25, logfc.threshold = 0.5, only.pos = F)
+UE.MET.change <- UE.MET.avg[as.character(unique(UE.MET.markers$gene)), 1:6]
+color <- brewer.pal(n = 11, "RdBu")
+color <- color[c(2:5, 7:10)]
+set.seed(0)
+UE.MET.change.heatmap <- pheatmap(UE.MET.change, scale = "row", cluster_rows = T, cluster_cols = F, kmeans_k = 8, clustering_method = "ward.D2", color = c(colorRampPalette(colors = rev(color))(100)))
+UE.MET.change.heatmap.cluster <- data.frame(cluster = as.character(UE.MET.change.heatmap$kmeans$cluster), 
+                                           gene = names(UE.MET.change.heatmap$kmeans$cluster))
+write.table(UE.MET.change.heatmap.cluster, file = "20210827-figures/UE-MET-DEGs-8-clusters.csv", sep = ",", quote = F)
+#分cluster 画heatmap
+min_max <- function(x){(x-min(x))/(max(x)-min(x))}
+UE.MET.change.pheatmap.list <- list()
+UE.MET.change.boxplot.list <- list()
+for (i in seq(1, 8, 1)) {
+  tmp.df <- UE.MET.change[as.character(UE.MET.change.heatmap.cluster[UE.MET.change.heatmap.cluster$cluster==i, ]$gene), ]
+  tmp.df <- tmp.df[rowSums(tmp.df)>0, ]
+  tmp.df.scale <- data.frame(t(apply(tmp.df, 1, scale)), check.names = F)
+  colnames(tmp.df.scale) <- c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D")
+  UE.MET.change.pheatmap.list[[i]] <- pheatmap(tmp.df, scale = "row", cluster_rows = T, cluster_cols = F, show_rownames = F,
+                                  color = c(colorRampPalette(colors = rev(color))(100)), border_color = NA)
+  tmp.df.scale <- melt(tmp.df.scale)
+  UE.MET.change.boxplot.list[[i]] <- ggplot() + 
+    geom_boxplot(tmp.df.scale, mapping = aes(x = variable, y = value, fill = variable)) +
+    scale_fill_manual(values = decidual.color[c(1,2,3,5,6,7)]) +
+    theme(panel.grid = element_blank(), panel.background = element_rect(fill = "white", color = "black"))
+}
+pdf("20210827-figures/figure2/Figure2-13-MET-average-comparing-heatmap-cluster.pdf", width = 15, height = 15)
+cowplot::plot_grid(UE.MET.change.pheatmap.list[[1]]$gtable, UE.MET.change.pheatmap.list[[2]]$gtable, UE.MET.change.pheatmap.list[[3]]$gtable, 
+                   UE.MET.change.pheatmap.list[[4]]$gtable, UE.MET.change.pheatmap.list[[5]]$gtable, UE.MET.change.pheatmap.list[[6]]$gtable, 
+                   UE.MET.change.pheatmap.list[[7]]$gtable, UE.MET.change.pheatmap.list[[8]]$gtable, ncol=3)
+dev.off()
+pdf("20210827-figures/figure2/Figure2-13-MET-average-comparing-boxplot-cluster.pdf", width = 15, height = 15)
+cowplot::plot_grid(UE.MET.change.boxplot.list[[1]], UE.MET.change.boxplot.list[[2]], UE.MET.change.boxplot.list[[3]], 
+                   UE.MET.change.boxplot.list[[4]], UE.MET.change.boxplot.list[[5]], UE.MET.change.boxplot.list[[6]], 
+                   UE.MET.change.boxplot.list[[7]], UE.MET.change.boxplot.list[[8]], ncol=3)
+dev.off()
+#GO
+UE.MET.change.heatmap.cluster.GO <- data.frame()
+for (c in seq(1, 8, 1)) {
+  print(c)
+  geneset <- UE.MET.change.heatmap.cluster[UE.MET.change.heatmap.cluster$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  UE.MET.change.heatmap.cluster.GO <- rbind(UE.MET.change.heatmap.cluster.GO, tmp)
+}
+
+UE.MET.change.heatmap.cluster.GO.top10 <- UE.MET.change.heatmap.cluster.GO %>% group_by(cluster) %>% top_n(n = 10, -pvalue)
+UE.MET.change.heatmap.cluster.GO.top10$GO_Term <- factor(UE.MET.change.heatmap.cluster.GO.top10$GO_Term, 
+                                                        levels = rev(unique(UE.MET.change.heatmap.cluster.GO.top10$GO_Term)))
+pdf("20210827-figures/figure2/Figure2-13-MET-average-comparing-cluster-GO.pdf", width = 15, height = 15)
+ggplot() + 
+  geom_point(UE.MET.change.heatmap.cluster.GO.top10, mapping = aes(x = cluster, y = GO_Term, color = -log10(pvalue))) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+}
+
+#merge 之后分析 AM(eSF, Pre-DSC, AM-DSC1, Matured DSC)
+AM.merge <- function(){
+UE.AM.avg <- UE.decidual.avg$RNA[, c(3,4,5,7)]
+UE.AM.avg <- UE.AM.avg*100
+UE.AM.avg.fc <- UE.AM.avg[, 2:4]/(UE.AM.avg[, 1] + 1)
+UE.AM.avg.up <- UE.AM.avg[apply(UE.AM.avg.fc, 1, max)>2, ]
+UE.AM.avg.down <- UE.AM.avg[apply(UE.AM.avg.fc, 1, min)>0.5, ]
+UE.AM <- subset(UE.decidual, subset = cellname %in% c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D"))
+UE.AM.markers <- FindAllMarkers(UE.AM, min.pct = 0.5, logfc.threshold = 0.25, only.pos = F)
+UE.AM.change <- UE.AM.avg[as.character(unique(UE.AM.markers$gene)), 1:4]
+color <- brewer.pal(n = 11, "RdBu")
+color <- color[c(2:5, 7:10)]
+set.seed(0)
+UE.AM.change.heatmap <- pheatmap(UE.AM.change, scale = "row", cluster_rows = T, cluster_cols = F, cutree_rows = 8, clustering_method = "ward.D2", color = c(colorRampPalette(colors = rev(color))(100)))
+UE.AM.change.heatmap.cluster <- data.frame(cluster = cutree(UE.AM.change.heatmap$tree_row, 8), 
+                                           gene = names(cutree(UE.AM.change.heatmap$tree_row, 8)))
+#分cluster 画heatmap
+UE.AM.change.pheatmap.list <- list()
+UE.AM.change.boxplot.list <- list()
+for (i in seq(1, 8, 1)) {
+  tmp.df <- UE.AM.change[UE.AM.change.heatmap.cluster[UE.AM.change.heatmap.cluster$cluster==i, ]$gene, ]
+  tmp.df <- tmp.df[rowSums(tmp.df)>0, ]
+  tmp.df.scale <- data.frame(t(apply(tmp.df, 1, scale)), check.names = F)
+  colnames(tmp.df.scale) <- c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D")
+  UE.AM.change.pheatmap.list[[i]] <- pheatmap(tmp.df,scale = "row", cluster_rows = F, cluster_cols = F, show_rownames = F,
+                                  color = c(colorRampPalette(colors = rev(color))(100)), border_color = NA)
+  tmp.df.scale <- melt(tmp.df.scale)
+  UE.AM.change.boxplot.list[[i]] <- ggplot() + 
+    geom_boxplot(tmp.df.scale, mapping = aes(x = variable, y = value, fill = variable)) +
+    scale_fill_manual(values = decidual.color[c(1,2,5,7)]) +
+    theme(panel.grid = element_blank(), panel.background = element_rect(fill = "white", color = "black"))
+}
+pdf("20210827-figures/figure2/Figure2-13-AM-average-comparing-heatmap-cluster.pdf", width = 15, height = 15)
+cowplot::plot_grid(UE.AM.change.pheatmap.list[[1]]$gtable, UE.AM.change.pheatmap.list[[2]]$gtable, UE.AM.change.pheatmap.list[[3]]$gtable, 
+                   UE.AM.change.pheatmap.list[[4]]$gtable, UE.AM.change.pheatmap.list[[5]]$gtable, UE.AM.change.pheatmap.list[[6]]$gtable, 
+                   UE.AM.change.pheatmap.list[[7]]$gtable, UE.AM.change.pheatmap.list[[8]]$gtable, ncol=3)
+dev.off()
+pdf("20210827-figures/figure2/Figure2-13-AM-average-comparing-boxplot-cluster.pdf", width = 15, height = 15)
+cowplot::plot_grid(UE.AM.change.boxplot.list[[1]], UE.AM.change.boxplot.list[[2]], UE.AM.change.boxplot.list[[3]], 
+                   UE.AM.change.boxplot.list[[4]], UE.AM.change.boxplot.list[[5]], UE.AM.change.boxplot.list[[6]], 
+                   UE.AM.change.boxplot.list[[7]], UE.AM.change.boxplot.list[[8]], ncol=3)
+dev.off()
+#GO
+UE.AM.change.heatmap.cluster.GO <- data.frame()
+for (c in seq(1, 8, 1)) {
+  print(c)
+  geneset <- UE.AM.change.heatmap.cluster[UE.AM.change.heatmap.cluster$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  UE.AM.change.heatmap.cluster.GO <- rbind(UE.AM.change.heatmap.cluster.GO, tmp)
+}
+
+UE.AM.change.heatmap.cluster.GO.top10 <- UE.AM.change.heatmap.cluster.GO %>% group_by(cluster) %>% top_n(n = 10, -pvalue)
+UE.AM.change.heatmap.cluster.GO.top10$GO_Term <- factor(UE.AM.change.heatmap.cluster.GO.top10$GO_Term, 
+                                                        levels = rev(unique(UE.AM.change.heatmap.cluster.GO.top10$GO_Term)))
+pdf("20210827-figures/figure2/Figure2-13-AM-average-comparing-cluster-GO.pdf", width = 15, height = 15)
+ggplot() + 
+  geom_point(UE.AM.change.heatmap.cluster.GO.top10, mapping = aes(x = cluster, y = GO_Term, color = -log10(pvalue))) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+
+}
+```
+
+```{r MET score}
+MET.GO <- read.table("20201203/03.decidual/GO-term-score/GO-0060231-MET-transition.csv", sep = ",", header = T)
+EMT.GO <- read.table("20201203/03.decidual/GO-term-score/EMT_GO_term_0001837-symbol.txt", sep = "\t", header = T)
+Migration.GO <- read.table("20201203/03.decidual/GO-term-score/Cell_migration_GO_term_0016477-symbol.txt", sep = "\t", header = T)
+Adhesion.GO <- read.table("20201203/03.decidual/GO-term-score/Cell_adhesion_GO_term_0007155-symbol.txt", sep = "\t", header = T)
+decidual.mono3.pseudotime <- read.table("/Data2/Users/yangmin/Jennie/20200801-SC/R/UE-decidual-AM-monolce3-pseudotime-df-20210907.csv", sep = ",", header = T)
+UE.decidual.expr <- data.frame(t(as.matrix(GetAssayData(UE.decidual, slot = "data"))), check.names = F)
+MET.gene <- intersect(as.character(MET.GO$Symbol), colnames(UE.decidual.expr))
+EMT.gene <- intersect(as.character(EMT.GO$Symbol), colnames(UE.decidual.expr))
+Migration.gene <- intersect(as.character(Migration.GO$Symbol), colnames(UE.decidual.expr))
+Adhesion.gene <- intersect(as.character(Adhesion.GO$Symbol), colnames(UE.decidual.expr))
+
+UE.decidual.MET.expr <- UE.decidual.expr[, MET.gene]
+MET.average <- apply(UE.decidual.MET.expr, 1, mean)
+
+UE.decidual.EMT.expr <- UE.decidual.expr[, EMT.gene]
+EMT.average <- apply(UE.decidual.EMT.expr, 1, mean)
+
+UE.decidual.Migration.expr <- UE.decidual.expr[, Migration.gene]
+Migration.average <- apply(UE.decidual.Migration.expr, 1, mean)
+
+UE.decidual.Adhesion.expr <- UE.decidual.expr[, Adhesion.gene]
+Adhesion.average <- apply(UE.decidual.Adhesion.expr, 1, mean)
+
+UE.AM.decidual.MET <- data.frame(MET = MET.average, 
+                                 EMT = EMT.average, 
+                                 Migration = Migration.average, 
+                                 Adhesion = Adhesion.average,
+                                 cellname = names(MET.average))
+UE.AM.decidual.MET.UMAP <- merge(UE.AM.decidual.MET, decidual.mono3.pseudotime, all.y = T, by = "cellname")
+UE.AM.decidual.MET.UMAP <- melt(UE.AM.decidual.MET.UMAP, id.vars = c("cellname", "UMAP_1", "UMAP_2", "pseudotime", "celltype", "time"))
+pdf("20210827-figures/figure2/Figure2-12-AM-MET-score.pdf", width = 8, height = 7)
+ggplot() + 
+  geom_point(UE.AM.decidual.MET.UMAP, mapping = aes(x = UMAP_1, y = UMAP_2, color = value), size = 1) + 
+  scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  facet_wrap(~ variable) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), 
+        panel.grid = element_blank())
+dev.off()
+
+#使用Top2a, S100a8, Gatm, Sfrp4, Lum几群一起看MET过程
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual$cellname <- gsub("Postn-D", "Lum-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Ifit1-D", "S100a8-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.decidual$cellname)
+UE.decidual$cellname <- factor(UE.decidual$cellname, levels = decidual.levels)
+UE.decidual.MET <- subset(UE.decidual,subset = cellname %in% c("Lum-D", "Sfrp4-D", "S100a8-D", "Gatm-D", "Top2a-D"))
+UE.decidual.MET@active.ident <- factor(UE.decidual.MET$cellname)
+UE.decidual.MET.markers <- FindAllMarkers(UE.decidual.MET, min.pct = 0.25, logfc.threshold = 0.5, only.pos = T)
+MET.decidual.mono3.pseudotime <- read.table("/Data2/Users/yangmin/Jennie/20200801-SC/R/UE-decidual-MET-monolce3-pseudotime-df-20211026.csv", sep = ",", header = T)
+UE.decidual.expr <- data.frame(t(as.matrix(GetAssayData(UE.decidual.MET, slot = "data"))), check.names = F)
+MET.gene <- intersect(as.character(MET.GO$Symbol), colnames(UE.decidual.expr))
+UE.decidual.MET.expr <- UE.decidual.expr[, MET.gene]
+MET.average <- apply(UE.decidual.MET.expr, 1, mean)
+UE.AM.decidual.MET <- data.frame(MET = MET.average, cellname = names(MET.average))
+UE.AM.decidual.MET.UMAP <- merge(UE.AM.decidual.MET, MET.decidual.mono3.pseudotime, all.y = T, by = "cellname")
+pdf("20210827-figures/figure2/Figure2-12-MET-MET-score-20211026.pdf", width = 7.5, height = 7)
+ggplot() + 
+  geom_point(UE.AM.decidual.MET.UMAP, mapping = aes(x = UMAP_1, y = UMAP_2, color = MET), size = 1) + 
+  scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), 
+        panel.grid = element_blank())
+dev.off()
+
+#20211105
+#使用ST 的Prl8a2, Top2a, S100a8, Gatm, Sfrp4, Lum几群一起看MET过程
+load("20210821-decidual-pseudotime/Decidual-ST-downsample-1000-seurat.RData")
+DefaultAssay(Decidual.bin50.subsample) <- "SCT"
+MET.decidual.mono3.pseudotime <- read.table("/Data2/Users/yangmin/Jennie/20200801-SC/R/UE-decidual-MET-ST-monolce3-pseudotime-df-20211105.csv", sep = ",", header = T)
+UE.decidual.expr <- data.frame(t(as.matrix(Decidual.bin50.subsample@assays$SCT@data)), check.names = F)
+
+MET.gene <- intersect(as.character(MET.GO$Symbol), colnames(UE.decidual.expr))
+EMT.gene <- intersect(as.character(EMT.GO$Symbol), colnames(UE.decidual.expr))
+Migration.gene <- intersect(as.character(Migration.GO$Symbol), colnames(UE.decidual.expr))
+Adhesion.gene <- intersect(as.character(Adhesion.GO$Symbol), colnames(UE.decidual.expr))
+
+UE.decidual.MET.expr <- UE.decidual.expr[, MET.gene]
+MET.average <- apply(UE.decidual.MET.expr, 1, mean)
+
+UE.decidual.EMT.expr <- UE.decidual.expr[, EMT.gene]
+EMT.average <- apply(UE.decidual.EMT.expr, 1, mean)
+
+UE.decidual.Migration.expr <- UE.decidual.expr[, Migration.gene]
+Migration.average <- apply(UE.decidual.Migration.expr, 1, mean)
+
+UE.decidual.Adhesion.expr <- UE.decidual.expr[, Adhesion.gene]
+Adhesion.average <- apply(UE.decidual.Adhesion.expr, 1, mean)
+
+UE.AM.decidual.MET <- data.frame(MET = MET.average, 
+                                 EMT = EMT.average, 
+                                 Migration = Migration.average, 
+                                 Adhesion = Adhesion.average,
+                                 cellname = names(MET.average))
+UE.AM.decidual.MET.UMAP <- merge(UE.AM.decidual.MET, MET.decidual.mono3.pseudotime, all.y = T, by = "cellname")
+UE.AM.decidual.MET.UMAP <- melt(UE.AM.decidual.MET.UMAP, id.vars = c("cellname", "UMAP_1", "UMAP_2", "pseudotime", "celltype", "time"))
+
+pdf("20210827-figures/figure2/Figure2-12-ST-MET-score-20211105.pdf", width = 7.5, height = 7)
+ggplot() + 
+  geom_point(UE.AM.decidual.MET.UMAP, mapping = aes(x = UMAP_1, y = UMAP_2, color = value), size = 1) + 
+  scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  facet_wrap(~ variable) + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), 
+        panel.grid = element_blank())
+dev.off()
+ggplot() + 
+  geom_violin(UE.AM.decidual.MET.UMAP, mapping = aes(x = celltype, y = value, fill = celltype), pt.size = 0) + 
+  #scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) + 
+  facet_wrap(~ variable, scale = "free") + 
+  theme(panel.background = element_rect(color = "black", fill = "white"), 
+        panel.grid = element_blank())
+```
+
+```{r}
+#看UMAP中MET,EMT.migration,adhesion的表达
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual$cellname <- gsub("Postn-D", "Lum-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Ifit1-D", "S100a8-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.decidual$cellname)
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-" & cellname != "cluster9-1")
+UE.decidual@active.ident <- factor(UE.decidual$cellname)
+UE.decidual.RNA <- data.frame(as.matrix(GetAssayData(UE.decidual, slot = "data")), check.names = F)
+UE.decidual.RNA.MET <- UE.decidual.RNA[rownames(UE.decidual.RNA) %in% MET.gene, ]
+UE.decidual.RNA.EMT <- UE.decidual.RNA[rownames(UE.decidual.RNA) %in% EMT.gene, ]
+UE.decidual.RNA.Migration <- UE.decidual.RNA[rownames(UE.decidual.RNA) %in% Migration.gene, ]
+UE.decidual.RNA.Adhesion <- UE.decidual.RNA[rownames(UE.decidual.RNA) %in% Adhesion.gene, ]
+UE.decidual.score <- data.frame(cell = colnames(UE.decidual), 
+                                MET = apply(UE.decidual.RNA.MET, 2, mean), 
+                                EMT = apply(UE.decidual.RNA.EMT, 2, mean), 
+                                Migration = apply(UE.decidual.RNA.Migration, 2, mean), 
+                                Adhesion = apply(UE.decidual.RNA.Adhesion, 2, mean))
+UE.decidual.celltype <- data.frame(cell = colnames(UE.decidual), celltype = UE.decidual$cellname)
+UE.decidual.celltype.score <- merge(UE.decidual.celltype, UE.decidual.score, by = "cell", all = F)
+UE.decidual.celltype.score.m <- melt(UE.decidual.celltype.score, id.vars = c("celltype", "cell"))
+UE.decidual.celltype.score.m$celltype <- factor(UE.decidual.celltype.score.m$celltype, levels = c("Lum-D", "Sfrp4-D", "Top2a-D",  "Gatm-D", "Ptn-D", "S100a8-D", "Prl8a2-D"))
+ggplot() + 
+  geom_boxplot(UE.decidual.celltype.score.m, mapping = aes(x = celltype, y = value, fill = variable)) +
+  facet_wrap(~ variable)
+```
+
+
+```{r}
+#load monolce3的pseudotime结果，然后使用monocle2计算随着拟时间的差异基因分析
+MET.decidual.mono3.pseudotime <- MET.decidual.mono3.pseudotime[!is.infinite(MET.decidual.mono3.pseudotime$pseudotime), ]
+MET.decidual.mono3.pseudotime.value <- MET.decidual.mono3.pseudotime$pseudotime
+names(MET.decidual.mono3.pseudotime.value) <- rownames(MET.decidual.mono3.pseudotime)
+Decidual.bin50.subsample <- subset(Decidual.bin50.subsample, cells = rownames(MET.decidual.mono3.pseudotime))
+Decidual.bin50.subsample@active.ident <- factor(Decidual.bin50.subsample$celltype)
+Decidual.bin50.subsample.markers <- FindAllMarkers(Decidual.bin50.subsample, min.pct = 0.25, logfc.threshold = 0.25, only.pos = T)
+
+Decidual.bin50.subsample <- AddMetaData(Decidual.bin50.subsample, metadata = MET.decidual.mono3.pseudotime.value, col.name = "Pseudotime")
+decidual.data <- as(as.matrix(Decidual.bin50.subsample@assays$SCT@data), 'sparseMatrix')
+pd <- new("AnnotatedDataFrame", Decidual.bin50.subsample@meta.data)
+fd <- data.frame(gene_short_name = row.names(decidual.data), row.names = row.names(decidual.data))
+fd <- new("AnnotatedDataFrame", data = fd)
+decidual.cds <- newCellDataSet(decidual.data,
+                               phenoData = pd,
+                               featureData = fd, 
+                               lowerDetectionLimit = 0.5,
+                               expressionFamily = negbinomial.size())
+decidual.cds <- estimateSizeFactors(decidual.cds)
+decidual.cds <- estimateDispersions(decidual.cds)
+decidual.cds <- detectGenes(decidual.cds, min_expr = 0.1)
+bin50.heatmap.genes <- intersect(rownames(decidual.cds), unique(UE.MET.markers$gene))
+set.seed(10000)
+decidual.pseudo.heatmap <- plot_pseudotime_heatmap(decidual.cds[bin50.heatmap.genes, ],
+                        num_clusters = 7,
+                        cores = 10,
+                        show_rownames = T,
+                        return_heatmap = T,
+                        use_gene_short_name = T, 
+                        hmcols = c(colorRampPalette(colors = rev(brewer.pal(11, "RdBu")))(60)))
+heatmap.genes <- c("Fn1", "Vim", "Col3a1", "Col1a2", "Col1a1", "Igfbp5", "Zeb1", "Sfrp4", 
+                   "Igf1", "Tcf4", "Cdh11", "Fscn1", "Wnt5a", "F2r", "Ass1", 
+                   "Ube2c", "Top2a", "Mki67", "Hmgb1", "Jun", "Bmp2", "Lama5", 
+                   "Angpt4", "Icam1", "Adam19", "Trem2", "Cdh5", "Gja1")
+pdf("20210827-figures/figure2/Figure2-11-ST-MET-pseudotime-heatmap-example.pdf")
+plot_pseudotime_heatmap(decidual.cds[heatmap.genes, ],
+                        cluster_rows = F,
+                        cores = 1,
+                        show_rownames = T,
+                        return_heatmap = F,
+                        use_gene_short_name = T, 
+                        hmcols = c(colorRampPalette(colors = rev(brewer.pal(11, "RdBu")))(60)))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-11-ST-pseudotime-heatmap-920genes.pdf")
+decidual.pseudo.heatmap
+dev.off()
+
+decidual.pseudo.cluster <- cutree(decidual.pseudo.heatmap$tree_row, 7)
+decidual.pseudo.cluster <- data.frame(gene = names(decidual.pseudo.cluster), cluster = decidual.pseudo.cluster)
+decidual.pseudo.cluster$cluster <- factor(decidual.pseudo.cluster$cluster, levels = c(2,1,6,7,5,3,4))
+write.table(decidual.pseudo.cluster, file = "20210827-figures/figure2/Figure2-11-ST-pseudotime-heatmap-920genes-7clusters-gene.csv", sep = ",", col.names = T, row.names = F, quote = F)
+enrich.GO.function <- function(geneset){
+  enrich.GO <- enrichGO(gene = geneset,
+                        OrgDb = "org.Mm.eg.db",
+                        keyType = "SYMBOL",
+                        ont = "BP",
+                        pvalueCutoff = 1,
+                        pAdjustMethod = "BH")
+  enrich.GO <- simplify(enrich.GO, cutoff = 0.6, by = "p.adjust", select_fun = min)
+  return(enrich.GO)
+}
+decidual.pseudo.cluster.GO.df <- data.frame()
+for (c in unique(decidual.pseudo.cluster$cluster)) {
+  print(c)
+  geneset <- decidual.pseudo.cluster[decidual.pseudo.cluster$cluster == c, ]$gene
+  enrich.GO <- enrich.GO.function(geneset)
+  tmp <- data.frame(cluster = c, 
+                    GO_ID = enrich.GO$ID, 
+                    GO_Term = enrich.GO$Description, 
+                    pvalue = enrich.GO$pvalue, 
+                    qvalue = enrich.GO$qvalue, 
+                    gene = enrich.GO$geneID)
+  decidual.pseudo.cluster.GO.df <- rbind(decidual.pseudo.cluster.GO.df, tmp)
+}
+write.table(decidual.pseudo.cluster.GO.df, file = "20210827-figures/figure2/Figure2-11-ST-pseudotime-heatmap-920genes-7clusters-GO-20230514.csv", sep = ",", col.names = T, row.names = F, quote = F)
+decidual.pseudo.cluster.GO.df.top5 <- decidual.pseudo.cluster.GO.df %>% group_by(cluster) %>% top_n(n = 5, -log10(pvalue))
+decidual.pseudo.cluster.GO.df.top5$cluster <- factor(decidual.pseudo.cluster.GO.df.top5$cluster, 
+                                                     levels = c("2","1","6","7","5","3","4"))
+decidual.pseudo.cluster.GO.df.top5 <- decidual.pseudo.cluster.GO.df.top5[order(decidual.pseudo.cluster.GO.df.top5$cluster), ]
+decidual.pseudo.cluster.GO.df.top5$GO_Term <- factor(decidual.pseudo.cluster.GO.df.top5$GO_Term, 
+                                                     levels = unique(rev(decidual.pseudo.cluster.GO.df.top5$GO_Term)))
+
+pdf("20210827-figures/figure2/Figure2-11-ST-MET-pseudotime-GO-20230514.pdf", width = 8, height = 7)
+ggplot() + 
+  geom_point(decidual.pseudo.cluster.GO.df.top5, mapping = aes(x = cluster, y = GO_Term, color = cluster, size = -log10(qvalue))) +
+  scale_size(range = c(1, 5)) + 
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank())
+dev.off()
+UE.decidual.MET.epxr <- data.frame(t(as.matrix(GetAssayData(UE.decidual.MET, slot = "data"))), 
+                               cellname = colnames(UE.decidual.MET),
+                               check.names = F)
+UE.decidual.MET.pseudo <- merge(MET.decidual.mono3.pseudotime, UE.decidual.MET.epxr, by = "cellname", all = F)
+UE.decidual.MET.pseudo <- UE.decidual.MET.pseudo[UE.decidual.MET.pseudo$pseudotime != Inf, ]
+
+pseudo.barplot.function(){
+#pseudotime cluster3
+cluster3.gene <- c("Col11a1", "Col4a1", "Col1a2", "Abi3bp", "Aebp1")
+UE.decidual.MET.pseudo.3 <- UE.decidual.MET.pseudo[, c("pseudotime", "celltype", "time", cluster3.gene)]
+UE.decidual.MET.pseudo.3$pseudo_trunc <- trunc(UE.decidual.MET.pseudo.3$pseudotime/5) * 5
+UE.decidual.MET.pseudo.3.expr <- aggregate(UE.decidual.MET.pseudo.3[, 4:8], by = list(UE.decidual.MET.pseudo.3$pseudo_trunc), mean)
+UE.decidual.MET.pseudo.3.expr <- melt(UE.decidual.MET.pseudo.3.expr, id.vars = "Group.1")
+UE.decidual.MET.pseudo.3.char <- UE.decidual.MET.pseudo.3[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.MET.pseudo.3.char <- melt(UE.decidual.MET.pseudo.3.char, id.vars = "pseudo_trunc")
+UE.decidual.MET.pseudo.3.char$value <- factor(UE.decidual.MET.pseudo.3.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.MET.pseudo.3.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#AEC500", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+p2 <- ggplot() +
+  geom_jitter(UE.decidual.MET.pseudo.3.char, mapping = aes(x = pseudo_trunc, y = 1, color = value), width = 2, height = 1, size = 0.01) + 
+  scale_color_manual(values = c("#6A5ACD", "#9ACD32", "#08519C", "#228B22", time.color)) +
+  facet_wrap(~ variable, ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank(), legend.position="none")
+pdf("20210827-figures/figure2/MET-pseudo/cluster3.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+
+#pseudotime cluster8
+cluster8.gene <- c("Anxa1", "Ecm1", "Tgfbr2", "Lgals3", "Serping1")
+UE.decidual.AM.pseudo.8 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster8.gene)]
+UE.decidual.AM.pseudo.8$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.8$pseudotime/5) * 5
+UE.decidual.AM.pseudo.8.expr <- aggregate(UE.decidual.AM.pseudo.8[, 4:8], by = list(UE.decidual.AM.pseudo.8$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.8.expr <- melt(UE.decidual.AM.pseudo.8.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.8.char <- UE.decidual.AM.pseudo.8[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.8.char <- melt(UE.decidual.AM.pseudo.8.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.8.char$value <- factor(UE.decidual.AM.pseudo.8.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.8.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#00D4FF", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster8.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+
+#pseudotime cluster9
+cluster9.gene <- c("Ifi202b", "Ifi204", "Ifi211")
+UE.decidual.AM.pseudo.9 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster9.gene)]
+UE.decidual.AM.pseudo.9$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.9$pseudotime/5) * 5
+UE.decidual.AM.pseudo.9.expr <- aggregate(UE.decidual.AM.pseudo.9[, 4:6], by = list(UE.decidual.AM.pseudo.9$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.9.expr <- melt(UE.decidual.AM.pseudo.9.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.9.char <- UE.decidual.AM.pseudo.9[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.9.char <- melt(UE.decidual.AM.pseudo.9.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.9.char$value <- factor(UE.decidual.AM.pseudo.9.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.9.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#00DCBA", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster9.pdf", height = 5, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(3, 2))
+dev.off()
+
+#pseudotime cluster7
+cluster7.gene <- c("Hspa8", "Igfbp3", "Naca", "Npm1", "Rbpj")
+UE.decidual.AM.pseudo.7 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster7.gene)]
+UE.decidual.AM.pseudo.7$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.7$pseudotime/5) * 5
+UE.decidual.AM.pseudo.7.expr <- aggregate(UE.decidual.AM.pseudo.7[, 4:8], by = list(UE.decidual.AM.pseudo.7$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.7.expr <- melt(UE.decidual.AM.pseudo.7.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.7.char <- UE.decidual.AM.pseudo.7[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.7.char <- melt(UE.decidual.AM.pseudo.7.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.7.char$value <- factor(UE.decidual.AM.pseudo.7.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.7.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#00D65C", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster7.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+
+#pseudotime cluster5
+cluster5.gene <- c("Foxl2", "Hoxa10", "Hoxa11", "Hmgb2", "Prdm1")
+UE.decidual.AM.pseudo.5 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster5.gene)]
+UE.decidual.AM.pseudo.5$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.5$pseudotime/5) * 5
+UE.decidual.AM.pseudo.5.expr <- aggregate(UE.decidual.AM.pseudo.5[, 4:8], by = list(UE.decidual.AM.pseudo.5$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.5.expr <- melt(UE.decidual.AM.pseudo.5.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.5.char <- UE.decidual.AM.pseudo.5[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.5.char <- melt(UE.decidual.AM.pseudo.5.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.5.char$value <- factor(UE.decidual.AM.pseudo.5.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.5.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#82B7FF", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster5.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+
+#pseudotime cluster2
+cluster2.gene <- c("Cited2", "Ctnnb1", "Hand2", "Hoxd11", "Klf5")
+UE.decidual.AM.pseudo.2 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster2.gene)]
+UE.decidual.AM.pseudo.2$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.2$pseudotime/5) * 5
+UE.decidual.AM.pseudo.2.expr <- aggregate(UE.decidual.AM.pseudo.2[, 4:8], by = list(UE.decidual.AM.pseudo.2$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.2.expr <- melt(UE.decidual.AM.pseudo.2.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.2.char <- UE.decidual.AM.pseudo.2[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.2.char <- melt(UE.decidual.AM.pseudo.2.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.2.char$value <- factor(UE.decidual.AM.pseudo.2.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.2.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#FF80DE", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster2.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+
+#pseudotime cluster6
+cluster6.gene <- c("S100a10", "Cd47", "Dmkn", "Psap", "Adam12")
+UE.decidual.AM.pseudo.6 <- UE.decidual.AM.pseudo[, c("pseudotime", "celltype", "time", cluster6.gene)]
+UE.decidual.AM.pseudo.6$pseudo_trunc <- trunc(UE.decidual.AM.pseudo.6$pseudotime/5) * 5
+UE.decidual.AM.pseudo.6.expr <- aggregate(UE.decidual.AM.pseudo.6[, 4:8], by = list(UE.decidual.AM.pseudo.6$pseudo_trunc), mean)
+UE.decidual.AM.pseudo.6.expr <- melt(UE.decidual.AM.pseudo.6.expr, id.vars = "Group.1")
+UE.decidual.AM.pseudo.6.char <- UE.decidual.AM.pseudo.6[, c("pseudo_trunc", "celltype", "time")]
+UE.decidual.AM.pseudo.6.char <- melt(UE.decidual.AM.pseudo.6.char, id.vars = "pseudo_trunc")
+UE.decidual.AM.pseudo.6.char$value <- factor(UE.decidual.AM.pseudo.6.char$value, levels = c("Lum-D", "Sfrp4-D", "Gatm-D", "Prl8a2-D", "T55", "T65", "T75", "T85", "T95", "T105"))
+p1 <- ggplot() + 
+  geom_bar(UE.decidual.AM.pseudo.6.expr, mapping = aes(x = Group.1, y = value), stat = "identity", fill = "#F0AD00", width = 4) + 
+  facet_wrap(~ variable, scales = "fixed", ncol = 1, strip.position = "right") + 
+  theme_classic() + 
+  theme(axis.line = element_blank(), axis.text = element_blank(), 
+        axis.ticks = element_blank(), axis.title = element_blank())
+pdf("20210827-figures/figure2/AM-pseudo/cluster6.pdf", height = 7, width = 6)
+p1 + p2 + plot_layout(ncol = 1, heights = c(5, 2))
+dev.off()
+}
+
+```
+
+#单独做一些重要讨论基因的点亮图collagen等
+```{r}
+collagen1 <- c("Col11a1", "Col12a1", "Lum", "Eln", "Mfap4", "Col5a1", "Col6a1", "Col1a2", "Ogn", 
+              "Bgn", "Col1a1", "Mfge8", "Pcolce", "Vcan")
+collagen2 <- c("Matn2", "Ecm1", "Efemp2", "Fbln2", "Fbn1", "Mfap5", "Mgp", "Srgn", "Des", 
+              "Lamb2", "Lamc1", "Lama5")
+pdf("20210827-figures/figure2/Figure2-17-E75-2-ECM-expression-1.pdf", width = 10, height = 10)
+my_spatial_plot(E75.2.bin50, features = collagen1, ncol = 4, color = brewer.pal(9, "PuBu"))
+dev.off()
+pdf("20210827-figures/figure2/Figure2-17-E75-2-ECM-expression-2.pdf", width = 10, height = 8)
+my_spatial_plot(E75.2.bin50, features = collagen2, ncol = 4, color = brewer.pal(9, "PuBu"))
+dev.off()
+
+```
+
+```{r cycling genes}
+cycle.pro <- c("Ccna1", "Ccnb1", "Cdk1", "Cdk2", "Ccne1", "Ccnd3", "Cdk4")
+FeaturePlot(UE.decidual, features = cycle.pro)
+cycle.diff <- c("Cdkn1a", "Cdk6")
+FeaturePlot(UE.decidual, features = cycle.diff)
+poly.gene <- c("Ccnd3", "Cdk6")
+FeaturePlot(UE.decidual, features = poly.gene)
+```
+
+```{r}
+#E6.5, 7.5, 8.5, 9.5四个时间点的MET相关群在空间上的分布信息
+#现在文件20211010-figures-spatial文档中读取文件，并进行factor设定，和颜色值定
+MET.clusters <- c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D")
+#E6.5
+E65.1.MET.spatial.color <- c(E65.1.color[1:3], E65.1.color[5:7])
+E65.1.MET.subset <- E65.1.bin50.celltype.df[E65.1.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E65.1.MET.p <- ggplot() + 
+  geom_point(E65.1.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7")+ 
+  theme_classic() + 
+  theme(axis.text = element_blank()) +
+  geom_point(E65.1.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E65.1.MET.spatial.color) 
+E65.2.MET.spatial.color <- c(E65.2.color[1:3], E65.2.color[5:7])
+E65.2.MET.subset <- E65.2.bin50.celltype.df[E65.2.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E65.2.MET.p <- ggplot() + 
+  geom_point(E65.2.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E65.2.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E65.2.MET.spatial.color) 
+#E7.5
+E75.1.MET.spatial.color <- c(E75.1.color[1:3], E75.1.color[5:7])
+E75.1.MET.subset <- E75.1.bin50.celltype.df[E75.1.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E75.1.MET.p <- ggplot() + 
+  geom_point(E75.1.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E75.1.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E75.1.MET.spatial.color) 
+
+E75.2.MET.spatial.color <- c(E75.2.color[1:3], E75.2.color[5:7])
+E75.2.MET.subset <- E75.2.bin50.celltype.df[E75.2.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E75.2.MET.p <- ggplot() + 
+  geom_point(E75.2.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E75.2.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E75.2.MET.spatial.color) 
+
+E85.B6.MET.spatial.color <- c(B6.color[1:3], B6.color[5:7])
+E85.B6.MET.subset <- E85.B6.bin50.celltype.df[E85.B6.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E85.B6.MET.p <- ggplot() + 
+  geom_point(E85.B6.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E85.B6.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E85.B6.MET.spatial.color) 
+
+E85.C1.MET.spatial.color <- c(C1.color[1:3], C1.color[5:7])
+E85.C1.MET.subset <- E85.C1.bin50.celltype.df[E85.C1.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E85.C1.MET.p <- ggplot() + 
+  geom_point(E85.C1.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E85.C1.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E85.C1.MET.spatial.color) 
+
+E95.MET.spatial.color <- c(E95.color[1:6])
+E95.MET.subset <- E95.bin50.celltype.df[E95.bin50.celltype.df$cell_type %in% MET.clusters, ]
+E95.MET.p <- ggplot() + 
+  geom_point(E95.bin50.celltype.df, mapping = aes(x = x, y = y), size = 1.3, color = "#E7E7E7") + 
+  theme_classic() + 
+  theme(axis.text = element_blank())+ 
+  geom_point(E95.MET.subset, mapping = aes(x = x, y = y, color = cell_type), size = 1.3) +
+  scale_color_manual(values = E95.MET.spatial.color) 
+pdf("20210827-figures/figure2/Figure2-14-MET-E65-1-spatial.pdf", width = 5, height = 5.5)
+E65.1.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E65-2-spatial.pdf", width = 6, height = 6.5)
+E65.2.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E75-1-spatial.pdf", width = 7.5, height = 8)
+E75.1.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E75-2-spatial.pdf", width = 8.5, height = 9.8)
+E75.2.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E85-B6-spatial.pdf", width = 7.2, height = 7.7)
+E85.B6.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E85-C1-spatial.pdf", width = 7, height = 7.5)
+E85.C1.MET.p + theme(legend.position="none")
+dev.off()
+pdf("20210827-figures/figure2/Figure2-14-MET-E95-spatial.pdf", width = 12.5, height = 13.5)
+E95.MET.p + theme(legend.position="none")
+dev.off()
+```
+
+```{r 计算每个片子的decidual的nCount/nFeature比值} 
+decidual.color <- c("#6A5ACD","#9ACD32","#FB8072","#8DD3C7","#08519C","#FDB462","#228B22","#FCCDE5","#D9D9D9")
+decidual.subset <- c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D")
+#E65.1
+E65.1.bin50.decidual.df <- E65.1.bin50.celltype.df[E65.1.bin50.celltype.df$cell_type %in% decidual.subset, ]
+E65.1.bin50.decidual.df$cell_type <- factor(E65.1.bin50.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/nCount_nFeature/Figure2-E65.1-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(E65.1.bin50.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#E65.2
+E65.2.bin50.decidual.df <- E65.2.bin50.celltype.df[E65.2.bin50.celltype.df$cell_type %in% decidual.subset, ]
+E65.2.bin50.decidual.df$cell_type <- factor(E65.2.bin50.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/nCount_nFeature/Figure2-E65.2-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(E65.2.bin50.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#E75.1
+E75.1.bin50.decidual.df <- E75.1.bin50.celltype.df[E75.1.bin50.celltype.df$cell_type %in% decidual.subset, ]
+E75.1.bin50.decidual.df$cell_type <- factor(E75.1.bin50.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/nCount_nFeature/Figure2-E75.1-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(E75.1.bin50.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#E75.2
+E75.2.bin50.decidual.df <- E75.2.bin50.celltype.df[E75.2.bin50.celltype.df$cell_type %in% decidual.subset, ]
+E75.2.bin50.decidual.df$cell_type <- factor(E75.2.bin50.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/nCount_nFeature/Figure2-E75.2-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(E75.2.bin50.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+#E95
+E95.bin50.decidual.df <- E95.bin50.celltype.df[E95.bin50.celltype.df$cell_type %in% decidual.subset, ]
+E95.bin50.decidual.df$cell_type <- factor(E95.bin50.decidual.df$cell_type, 
+                                                  levels = c("Lum-D", "Sfrp4-D", "Top2a-D", "Gatm-D", "S100a8-D", "Prl8a2-D"))
+pdf("20210827-figures/figure2/nCount_nFeature/Figure2-E95-count_gene-boxplot.pdf", width = 5, height = 4)
+ggplot() + 
+  geom_boxplot(E95.bin50.decidual.df, mapping = aes(x = cell_type, y = nCount_RNA/nFeature_RNA, color = cell_type), outlier.colour = "white") +
+  scale_color_manual(values = c(decidual.color[c(1:3, 5:7)])) +
+  theme_classic()
+dev.off()
+```
+
+```{r}
+#ECM基因整理结果
+UE.decidual.RNA <- as.matrix(GetAssayData(UE.decidual, slot = "data"))
+UE.decidual.UMAP <- data.frame(Embeddings(UE.decidual, reduction = "umap"), check.names = F)
+UE.decidual.UMAP$cellname <- rownames(UE.decidual.UMAP)
+
+pattern1 <- c("Col11a1", "Col12a1", "Col4a1", "Col16a1", "Col4a2", "Eln", "Mfap4", "Fbln5", "Igfbp6",
+              "Lama4", "Thbs3", "Ltbp3", "Lum", "Srpx", "Prelp", "Postn", "Tnfaip6", "Ltbp1")
+pattern2 <- c("Col5a1", "Col15a1", "Col6a1", "Col6a2", "Col1a2", "Col3a1", "Col5a2", "Hspg2", "Ogn", "Bgn", 
+              "Dcn", "Dpt", "Sparcl1", "Igfbp5", "Ltbp4", "Lama2", "Mfap2", "Svep1", "Crispld2", "Nid1", 
+              "Aebp1", "Sparc", "Mmp2", "Col18a1", "Igfbp7", "Lamb1")
+pattern3 <- c("Col14a1", "Col1a1", "Vcan", "Pcolce", "Mfge8", "Fbln1", "Igfbp4", "Emilin1", "Fn1", "Slit3", "Cyr61")
+pattern4 <- c("Matn2", "Ecm1", "Spon1", "Efemp2", "Emilin2", "Fbln2", "Sned1")
+pattern5 <- c("Fbn1", "Mfap5", "Mgp")
+pattern6 <- c("Srgn", "Lamb2", "Lamc1", "Lama5", "Tinagl1", "Des", "Rspo3")
+
+pattern1.violin <- StackedVlnPlot(UE.decidual, features = c(pattern1), pt.size = 0, cols = decidual.color[1:7])
+pattern2.violin <- StackedVlnPlot(UE.decidual, features = c(pattern2), pt.size = 0, cols = decidual.color[1:7])
+pattern3.violin <- StackedVlnPlot(UE.decidual, features = c(pattern3), pt.size = 0, cols = decidual.color[1:7])
+pattern4.violin <- StackedVlnPlot(UE.decidual, features = c(pattern4), pt.size = 0, cols = decidual.color[1:7])
+pattern5.violin <- StackedVlnPlot(UE.decidual, features = c(pattern5), pt.size = 0, cols = decidual.color[1:7])
+pattern6.violin <- StackedVlnPlot(UE.decidual, features = c(pattern6), pt.size = 0, cols = decidual.color[1:7])
+
+library("cowplot")
+pdf("20210827-figures/figure2/Figure2-ECM-6patterns-violin.pdf", width = 50, height = 40)
+plot_grid(pattern1.violin, pattern2.violin, pattern3.violin, pattern4.violin, pattern5.violin, pattern6.violin) 
+dev.off()
+
+
+load("../20210201-integrate/UE-decidual-harmony-pc30-rename.RData")
+UE.decidual$cellname <- gsub("Postn-D", "Lum-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Ifit1-D", "S100a8-D", UE.decidual$cellname)
+UE.decidual$cellname <- gsub("Hist1h2ap-D", "Top2a-D", UE.decidual$cellname)
+UE.decidual <- subset(UE.decidual, subset = cellname != "Prg-" & cellname != "cluster9-1")
+UE.decidual@active.ident <- factor(UE.decidual$cellname, levels = decidual.levels[1:7])
+UE.decidual <- ScaleData(UE.decidual, features = rownames(UE.decidual))
+DoHeatmap(UE.decidual, features = c(pattern1, pattern2, pattern3, pattern4, pattern5, pattern6)) + 
+  scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 5, name = "RdBu")))
+dev.off()
+UE.decidual.RNA.avg <- AverageExpression(UE.decidual)
+UE.decidual.RNA.avg <- UE.decidual.RNA.avg$RNA
+UE.decidual.RNA.avg.ECM <- UE.decidual.RNA.avg[c(pattern1, pattern2, pattern3, pattern4, pattern5, pattern6), ]
+pdf("20210827-figures/figure2/Figure2-ECM-cellname-avg-heatmap.pdf", width = 10, height = 10)
+pheatmap(log(UE.decidual.RNA.avg.ECM+1), scale = "row", cluster_rows = T, cluster_cols = F, cutree_rows = 7, 
+         color = c(colorRampPalette(colors = color)(100)), border_color = NA)
+dev.off()
+UE.decidual.RNA.pattern1 <- UE.decidual.RNA[pattern1, ]
+UE.decidual.RNA.pattern1 <- apply(UE.decidual.RNA.pattern1, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern2 <- UE.decidual.RNA[pattern2, ]
+UE.decidual.RNA.pattern2 <- apply(UE.decidual.RNA.pattern2, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern3 <- UE.decidual.RNA[pattern3, ]
+UE.decidual.RNA.pattern3 <- apply(UE.decidual.RNA.pattern3, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern4 <- UE.decidual.RNA[pattern4, ]
+UE.decidual.RNA.pattern4 <- apply(UE.decidual.RNA.pattern4, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern5 <- UE.decidual.RNA[pattern5, ]
+UE.decidual.RNA.pattern5 <- apply(UE.decidual.RNA.pattern5, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern6 <- UE.decidual.RNA[pattern6, ]
+UE.decidual.RNA.pattern6 <- apply(UE.decidual.RNA.pattern6, 1, function(x){(x-min(x))/(max(x)-min(x))})
+
+UE.decidual.RNA.pattern.avg <- data.frame(pattern1 = apply(UE.decidual.RNA.pattern1, 1, mean), 
+                                           pattern2 = apply(UE.decidual.RNA.pattern2, 1, mean), 
+                                           pattern3 = apply(UE.decidual.RNA.pattern3, 1, mean), 
+                                           pattern4 = apply(UE.decidual.RNA.pattern4, 1, mean),
+                                           pattern5 = apply(UE.decidual.RNA.pattern5, 1, mean), 
+                                           pattern6 = apply(UE.decidual.RNA.pattern6, 1, mean),
+                                           cellname = colnames(UE.decidual.RNA))
+UE.decidual.RNA.pattern.avg <- melt(UE.decidual.RNA.pattern.avg, id.vars = "cellname")
+UE.decidual.RNA.pattern.avg <- merge(UE.decidual.RNA.pattern.avg, UE.decidual.UMAP, by = "cellname", all = F)
+pdf("20210827-figures/figure2/Figure2-16-decidual-ECM-expr-featureplot.pdf", width = 16, height = 10)
+ggplot() + 
+  geom_point(UE.decidual.RNA.pattern.avg, mapping = aes(x = UMAP_1, y = UMAP_2, color = value), size = 0.5) + 
+  scale_color_gradientn(colors = colorRampPalette(colors = rev(brewer.pal(11, "Spectral")))(100)) + 
+  facet_wrap(~ variable) + 
+  theme_void()
+dev.off()
+```
+
+```{r}
+#分cluster计算每个cluster的GO score
+apoptosis <- read.table("20201203/03.decidual/GO-term-score/Apoptosis-GO-0006915.csv", sep = ",", header = T)
+decidual <- read.table("20201203/03.decidual/GO-term-score/Decidualization-mouse-GO-0046697.csv", sep = ",", header = T)
+mitochondion <- read.table("20201203/03.decidual/GO-term-score/mitochondrion-GO-0005739.csv", sep = ",", header = T)
+ECM <- read.table("20201203/03.decidual/ECM-mouse-GO-0031012.csv", sep = ",", check.names = F)
+decreased.oxygene <- read.table("20201203/03.decidual/GO-term-score/Decreased-oxygene-levels-GO-0036294.csv", sep = ",", header = T)
+inflammatory <- read.table("20201203/03.decidual/GO-term-score/Inflammatory-response-GO-0006954.csv", sep = ",", header = T)
+
+decidual.score.data <- data.frame(UE.decidual@assays$RNA@data)
+decidual.score.data.apoptosis <- decidual.score.data[rownames(decidual.score.data) %in% apoptosis$Symbol, ]
+decidual.score.data.decidual <- decidual.score.data[rownames(decidual.score.data) %in% decidual$Symbol, ]
+decidual.score.data.mitochondion <- decidual.score.data[rownames(decidual.score.data) %in% mitochondion$Symbol, ]
+decidual.score.data.ECM <- decidual.score.data[rownames(decidual.score.data) %in% ECM$V1, ]
+decidual.score.data.decreased.oxygene <- decidual.score.data[rownames(decidual.score.data) %in% decreased.oxygene$Symbol, ]
+decidual.score.data.inflammatory <- decidual.score.data[rownames(decidual.score.data) %in% inflammatory$Symbol, ]
+
+decidual.score <- data.frame(cell = colnames(UE.decidual), 
+                             apoptosis = apply(decidual.score.data.apoptosis, 2, mean),  
+                             decidual = apply(decidual.score.data.decidual, 2, mean), 
+                             mitochondion = apply(decidual.score.data.mitochondion, 2, mean), 
+                             ECM = apply(decidual.score.data.ECM, 2, mean), 
+                             oxygene = apply(decidual.score.data.decreased.oxygene, 2, mean), 
+                             inflammatory = apply(decidual.score.data.inflammatory, 2, mean))
+decidual.cellname <- data.frame(cell = colnames(UE.decidual), 
+                             cellname = UE.decidual@active.ident)
+decidual.score.cellname <- merge(decidual.cellname, decidual.score, by = "cell", all = F)
+apoptosis.score <- ggplot(decidual.score.cellname, aes(x = cellname, y = apoptosis, fill = cellname)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(fill = "white", width=0.3, outlier.shape = NA) +
+  scale_fill_manual(values = decidual.color) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  labs(title = "Apoptosis score (GO:0006915) of cellname")
+decidual.score <- ggplot(decidual.score.cellname, aes(x = cellname, y = decidual, fill = cellname)) + 
+  geom_violin(scale = "width", width =0.8) + 
+  geom_boxplot(fill = "white", width=0.3, outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = decidual.color) +
+  labs(title = "Decidual score (GO:0046697) of cellname")
+ECM.score <- ggplot(decidual.score.cellname, aes(x = cellname, y = ECM, fill = cellname)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, fill = "white", outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = decidual.color) +
+  labs(title = "ECM score (GO:0031012) of cellname")
+mitochondion.score <- ggplot(decidual.score.cellname, aes(x = cellname, y = mitochondion, fill = cellname)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, fill = "white", outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = decidual.color) +
+  labs(title = "Mitochondrion score (GO:0005739) of cellname")
+oxygene.score <- ggplot(decidual.score.cellname, aes(x = cellname, y = oxygene, fill = cellname)) + 
+  geom_violin(scale = "width", width = 0.8) + 
+  geom_boxplot(width=0.3, fill = "white", outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = decidual.color) +
+  labs(title = "Decreased oxygene score (GO:0036294) of cellname")
+inflammatory.score <- ggplot(decidual.score.cellname, mapping = aes(x = cellname, y = inflammatory, fill = cellname)) + 
+  geom_violin(scale = "width", width = 0.8)  + 
+  geom_boxplot(width=0.3, fill = "white", outlier.shape = NA) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1),
+        panel.grid = element_blank(),
+        axis.line = element_blank()) + 
+  scale_fill_manual(values = decidual.color) +
+  labs(title = "Inflammatory response score (GO:0006954) of cellname")
+pdf("20210827-figures/figure3/Figure3-subclusters-GO-score.pdf", width = 10, height = 10)
+cowplot::plot_grid(apoptosis.score, decidual.score, ECM.score, 
+                   mitochondion.score, oxygene.score, inflammatory.score, ncol = 2)
+dev.off()
+```
+
+
